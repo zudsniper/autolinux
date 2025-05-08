@@ -28,6 +28,14 @@ configure_desktop() {
     'code.desktop', 
     'com.valvesoftware.Steam.desktop'
   ]"
+  
+  # Restart GNOME Shell if running in X11 (not Wayland)
+  if [ "$XDG_SESSION_TYPE" != "wayland" ]; then
+    # Safe way to restart GNOME Shell
+    busctl --user call org.gnome.Shell /org/gnome/Shell org.gnome.Shell Eval s 'Meta.restart("Restarting…")'
+  else
+    echo "Running under Wayland - manual logout/login required for some changes to take effect"
+  fi
 }
 
 # Create a script to be run by the user (not root)
@@ -91,3 +99,19 @@ Comment=Setup desktop environment on first login
 EOF
 
 chown -R jason:jason /home/jason/.config/autostart
+
+# Run the desktop configuration now if we're not root
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Applying desktop settings now..."
+  configure_desktop
+else
+  echo "Running as root - attempting to apply settings as user jason..."
+  # Run the configuration commands as the user jason
+  su - jason -c "DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u jason)/bus $(dirname "$0")/$(basename "$0") --user-only"
+fi
+
+# If script is called with --user-only, just run the desktop configuration
+if [ "$1" = "--user-only" ]; then
+  configure_desktop
+  exit 0
+fi
