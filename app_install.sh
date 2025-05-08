@@ -375,14 +375,37 @@ else
 fi
 
 # Properly install Rust with environment sourcing
-if ! command -v rustc &> /dev/null; then
+check_rust_installed() {
+    # Check if rustc is in path
+    if command -v rustc &> /dev/null; then
+        return 0
+    fi
+    
+    # Check if installation exists but not in path
+    if [ -f "$HOME/.cargo/bin/rustc" ] || [ -f "/home/jason/.cargo/bin/rustc" ]; then
+        source "$HOME/.cargo/env" 2>/dev/null || true
+        return 0
+    fi
+    
+    return 1
+}
+
+if ! check_rust_installed; then
     echo "Installing Rust..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source "$HOME/.cargo/env"
+    source "$HOME/.cargo/env" || true
     rustup toolchain install nightly
     rustup default stable
 else
     echo "Rust already installed, skipping."
+    # Ensure environment is sourced
+    source "$HOME/.cargo/env" 2>/dev/null || true
+    
+    # Check if nightly toolchain is installed
+    if ! rustup toolchain list | grep -q "nightly"; then
+        echo "Installing Rust nightly toolchain..."
+        rustup toolchain install nightly
+    fi
 fi
 
 # Ringboard - fixed dependency approach
@@ -403,10 +426,8 @@ fi
 if ! command -v ringboard-server &> /dev/null; then
     echo "Installing Ringboard..."
     
-    # Ensure cargo is in path
-    if ! command -v cargo &> /dev/null; then
-        source "$HOME/.cargo/env"
-    fi
+    # Make sure Rust environment is sourced (it should be from earlier step)
+    source "$HOME/.cargo/env" 2>/dev/null || true
     
     # Install server component
     cargo install clipboard-history-server --no-default-features --features systemd
@@ -495,16 +516,18 @@ else
 fi
 
 # Warp Terminal
-if ! is_package_installed "warp-terminal"; then
+if ! is_package_installed "warp-terminal" && ! command -v warp &> /dev/null; then
     echo "Installing Warp Terminal..."
-    if [ ! -f /usr/share/keyrings/warp.gpg ]; then
-        curl -fsSL https://app.warp.dev/download/key.pub | gpg --dearmor | tee /usr/share/keyrings/warp.gpg > /dev/null
+    
+    # Use direct download method instead of repository
+    TEMP_DEB=$(mktemp)
+    wget -O "$TEMP_DEB" "https://app.warp.dev/download?package=deb"
+    if [ -f "$TEMP_DEB" ]; then
+        apt install -y "$TEMP_DEB"
+        rm -f "$TEMP_DEB"
+    else
+        echo "Failed to download Warp Terminal."
     fi
-    if ! is_repository_added "app.warp.dev"; then
-        echo "deb [signed-by=/usr/share/keyrings/warp.gpg] https://app.warp.dev/stable/debian any main" | tee /etc/apt/sources.list.d/warp.list > /dev/null
-        apt update
-    fi
-    apt install -y warp-terminal
 else
     echo "Warp Terminal already installed, skipping."
 fi
