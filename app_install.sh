@@ -519,12 +519,17 @@ fi
 if ! is_package_installed "warp-terminal" && ! command -v warp &> /dev/null; then
     echo "Installing Warp Terminal..."
     
-    # Use direct download method instead of repository
-    TEMP_DEB=$(mktemp)
-    wget -O "$TEMP_DEB" "https://app.warp.dev/download?package=deb"
+    # Remove old repo if it exists
+    rm -f /etc/apt/sources.list.d/warp.list /usr/share/keyrings/warp.gpg
+    
+    # Use direct download method
+    TEMP_DIR=$(mktemp -d)
+    TEMP_DEB="$TEMP_DIR/warp.deb"
+    wget -O "$TEMP_DEB" "https://app.warp.dev/get_warp?package=deb"
+    
     if [ -f "$TEMP_DEB" ]; then
         apt install -y "$TEMP_DEB"
-        rm -f "$TEMP_DEB"
+        rm -rf "$TEMP_DIR"
     else
         echo "Failed to download Warp Terminal."
     fi
