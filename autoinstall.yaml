@@ -1,0 +1,63 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  
+  storage:
+    layout:
+      name: direct
+    config:
+      - type: disk
+        id: disk-0
+        path: /dev/sda
+        ptable: gpt
+        grub_device: true
+      - type: partition
+        id: boot-partition
+        device: disk-0
+        size: 500M
+        flag: boot
+      - type: partition
+        id: root-partition
+        device: disk-0
+        size: 30G
+      - type: partition
+        id: swap-partition
+        device: disk-0
+        size: 16G
+      - type: format
+        id: boot-format
+        volume: boot-partition
+        fstype: ext4
+      - type: format
+        id: root-format
+        volume: root-partition
+        fstype: ext4
+      - type: format
+        id: swap-format
+        volume: swap-partition
+        fstype: swap
+      - type: mount
+        id: boot-mount
+        device: boot-format
+        path: /boot
+      - type: mount
+        id: root-mount
+        device: root-format
+        path: /
+      - type: mount
+        id: swap-mount
+        device: swap-format
+        path: none
+  
+  identity:
+    hostname: ubuntu
+    username: jason
+    # Generate with: mkpasswd --method=SHA-512
+    password: $6$examplehashedpassword
+  
+  user-data:
+    runcmd:
+      - "curl -s https://your-server.com/scripts/setup.sh | bash"
