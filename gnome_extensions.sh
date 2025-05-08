@@ -108,18 +108,18 @@ is_extension_installed() {
 # Check if extensions are enabled
 check_extensions_enabled
 
-# Install gTile
-if is_extension_installed "gTile@vibou"; then
-  log_success "gTile is already installed, skipping..."
+# Install Tiling Shell
+if is_extension_installed "tilingshell@ferrarodomenico.com"; then
+  log_success "Tiling Shell is already installed, skipping..."
 else
-  log_header "Installing gTile from source..."
+  log_header "Installing Tiling Shell from source..."
   su - "$REAL_USER" -c "cd $TEMP_DIR && \
-    git clone https://github.com/gTile/gTile.git && \
-    cd gTile && \
-    npm ci && \
-    npm run build:dist && \
-    npm run install:extension" || handle_error "Failed to install gTile"
-  log_success "gTile installed successfully."
+    git clone https://github.com/fedomeno/tiling-shell.git && \
+    cd tiling-shell && \
+    npm i && \
+    npm run build && \
+    npm run install:extension" || handle_error "Failed to install Tiling Shell"
+  log_success "Tiling Shell installed successfully."
 fi
 
 # Install Unite
@@ -217,17 +217,15 @@ if gsettings get org.gnome.shell disable-user-extensions | grep -q "true"; then
 fi
 
 # Enable extensions
-for extension in gTile@vibou unite@hardpixel.eu hidetopbar@mathieu.bidon.ca just-perfection-desktop@just-perfection; do
+for extension in tilingshell@ferrarodomenico.com unite@hardpixel.eu hidetopbar@mathieu.bidon.ca just-perfection-desktop@just-perfection; do
   log_info "Enabling extension: $extension"
   gnome-extensions enable "$extension" && log_success "Enabled $extension" || log_error "Failed to enable $extension"
 done
 
 log_info "Configuring extension settings"
 
-# gTile
-gsettings set org.gnome.shell.extensions.gtile.keybindings resize-left "['<Super>Left']"
-gsettings set org.gnome.shell.extensions.gtile.keybindings resize-right "['<Super>Right']"
-log_success "Configured gTile"
+# Tiling Shell settings - adjust if specific settings are needed
+# Currently using default settings
 
 # Unite
 gsettings set org.gnome.shell.extensions.unite hide-activities-button true
