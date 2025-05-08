@@ -526,11 +526,38 @@ fi
 # Kitty terminal
 if [ ! -f /usr/local/bin/kitty ]; then
     echo "Installing Kitty terminal..."
-    curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin
-    ln -sf ~/.local/kitty.app/bin/kitty ~/.local/kitty.app/bin/kitten /usr/local/bin/
-    mkdir -p ~/.local/share/applications
-    cp ~/.local/kitty.app/share/applications/kitty.desktop ~/.local/share/applications/
-    cp ~/.local/kitty.app/share/applications/kitty-open.desktop ~/.local/share/applications/
+    
+    # Get the actual username (not root)
+    REAL_USER=$(logname 2>/dev/null || echo ${SUDO_USER:-${USER}})
+    REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+    
+    if [ -z "$REAL_USER" ] || [ "$REAL_USER" == "root" ]; then
+        echo "Cannot determine the non-root user. Installing Kitty as root, but it may not be accessible in the desktop environment."
+        curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin
+        ln -sf ~/.local/kitty.app/bin/kitty ~/.local/kitty.app/bin/kitten /usr/local/bin/
+    else
+        echo "Installing Kitty for user: $REAL_USER"
+        
+        # Install Kitty for the real user, not root
+        KITTY_SCRIPT="/tmp/install_kitty.sh"
+        cat > "$KITTY_SCRIPT" << 'EOF'
+#!/bin/bash
+set -e
+# Install kitty to the user's home directory
+curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin
+EOF
+        
+        chmod +x "$KITTY_SCRIPT"
+        sudo -u "$REAL_USER" bash "$KITTY_SCRIPT"
+        
+        # Create system-wide symlinks from user's installation
+        ln -sf "$REAL_HOME/.local/kitty.app/bin/kitty" "$REAL_HOME/.local/kitty.app/bin/kitten" /usr/local/bin/
+        
+        # Clean up
+        rm -f "$KITTY_SCRIPT"
+    fi
+    
+    echo "Kitty terminal installation completed."
 else
     echo "Kitty terminal already installed, skipping."
 fi

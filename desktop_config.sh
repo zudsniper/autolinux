@@ -33,6 +33,25 @@ configure_desktop() {
 # Create a script to be run by the user (not root)
 cat > /home/jason/setup_desktop.sh << 'EOF'
 #!/bin/bash
+# Ensure Kitty desktop entries are properly set up
+if [ -d "$HOME/.local/kitty.app" ]; then
+  # Make sure desktop files exist
+  mkdir -p "$HOME/.local/share/applications"
+  if [ ! -f "$HOME/.local/share/applications/kitty.desktop" ]; then
+    cp "$HOME/.local/kitty.app/share/applications/kitty.desktop" "$HOME/.local/share/applications/"
+  fi
+  if [ ! -f "$HOME/.local/share/applications/kitty-open.desktop" ]; then
+    cp "$HOME/.local/kitty.app/share/applications/kitty-open.desktop" "$HOME/.local/share/applications/"
+  fi
+  
+  # Update icon paths in desktop files to be absolute
+  sed -i "s|Icon=kitty|Icon=$HOME/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g" "$HOME/.local/share/applications/kitty.desktop"
+  sed -i "s|Icon=kitty|Icon=$HOME/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g" "$HOME/.local/share/applications/kitty-open.desktop"
+  
+  # Update the desktop database
+  update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+fi
+
 # Configure desktop settings
 gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
 gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita-dark'
