@@ -464,7 +464,7 @@ EOF
         # Add custom keybinding for user jason
         sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/name "'Ringboard Clipboard'"
         sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/command "'${EGUI_COMMAND}'"
-        sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/binding "'<Control><Super><Alt>c'"
+        sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/binding "'<Control><Super><Alt>v'"
         
         # Update custom keybindings list
         CURRENT_BINDINGS=$(sudo -u jason dconf read /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings)
