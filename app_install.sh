@@ -522,16 +522,24 @@ if ! is_package_installed "warp-terminal" && ! command -v warp &> /dev/null; the
     # Remove old repo if it exists
     rm -f /etc/apt/sources.list.d/warp.list /usr/share/keyrings/warp.gpg
     
-    # Use direct download method
+    # Use direct download method with stable URL
     TEMP_DIR=$(mktemp -d)
     TEMP_DEB="$TEMP_DIR/warp.deb"
-    wget -O "$TEMP_DEB" "https://app.warp.dev/get_warp?package=deb"
+    wget -O "$TEMP_DEB" "https://releases.warp.dev/stable/v0.2025.05.08.08.11.stable_01/warp-terminal_0.2025.05.08.08.11.stable.01_amd64.deb"
     
     if [ -f "$TEMP_DEB" ]; then
         apt install -y "$TEMP_DEB"
         rm -rf "$TEMP_DIR"
     else
-        echo "Failed to download Warp Terminal."
+        echo "Failed to download Warp Terminal. Trying alternative URL..."
+        # Fallback to most recent known working version
+        wget -O "$TEMP_DEB" "https://releases.warp.dev/stable/v0.2025.05.07.08.12.stable_02/warp-terminal_0.2025.05.07.08.12.stable.02_amd64.deb"
+        if [ -f "$TEMP_DEB" ]; then
+            apt install -y "$TEMP_DEB"
+        else
+            echo "Failed to download Warp Terminal from alternate URL."
+        fi
+        rm -rf "$TEMP_DIR"
     fi
 else
     echo "Warp Terminal already installed, skipping."
