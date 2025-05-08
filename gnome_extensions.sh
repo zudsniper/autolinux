@@ -114,8 +114,8 @@ if is_extension_installed "tilingshell@ferrarodomenico.com"; then
 else
   log_header "Installing Tiling Shell from source..."
   su - "$REAL_USER" -c "cd $TEMP_DIR && \
-    git clone https://github.com/fedomeno/tiling-shell.git && \
-    cd tiling-shell && \
+    git clone https://github.com/domferr/tilingshell.git && \
+    cd tilingshell && \
     npm i && \
     npm run build && \
     npm run install:extension" || handle_error "Failed to install Tiling Shell"
