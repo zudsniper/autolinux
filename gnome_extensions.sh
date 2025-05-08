@@ -147,18 +147,6 @@ else
   log_success "Hide Top Bar installed successfully."
 fi
 
-# Install Just Perfection
-if is_extension_installed "just-perfection-desktop@just-perfection"; then
-  log_success "Just Perfection is already installed, skipping..."
-else
-  log_header "Installing Just Perfection..."
-  su - "$REAL_USER" -c "cd $TEMP_DIR && \
-    git clone https://gitlab.gnome.org/jrahmatzadeh/just-perfection.git && \
-    cd just-perfection && \
-    ./scripts/build.sh -i" || handle_error "Failed to install Just Perfection"
-  log_success "Just Perfection installed successfully."
-fi
-
 # Clean up
 rm -rf "$TEMP_DIR"
 
@@ -217,7 +205,7 @@ if gsettings get org.gnome.shell disable-user-extensions | grep -q "true"; then
 fi
 
 # Enable extensions
-for extension in tilingshell@ferrarodomenico.com unite@hardpixel.eu hidetopbar@mathieu.bidon.ca just-perfection-desktop@just-perfection; do
+for extension in tilingshell@ferrarodomenico.com unite@hardpixel.eu hidetopbar@mathieu.bidon.ca; do
   log_info "Enabling extension: $extension"
   gnome-extensions enable "$extension" && log_success "Enabled $extension" || log_error "Failed to enable $extension"
 done
@@ -233,13 +221,6 @@ gsettings set org.gnome.shell.extensions.unite hide-window-titlebars 'always'
 gsettings set org.gnome.shell.extensions.unite show-window-buttons 'always'
 gsettings set org.gnome.shell.extensions.unite show-window-title 'never'
 log_success "Configured Unite"
-
-# Just Perfection
-gsettings set org.gnome.shell.extensions.just-perfection animation true
-gsettings set org.gnome.shell.extensions.just-perfection background-menu false
-gsettings set org.gnome.shell.extensions.just-perfection dash false
-gsettings set org.gnome.shell.extensions.just-perfection panel false
-log_success "Configured Just Perfection"
 
 # Hide Top Bar
 gsettings set org.gnome.shell.extensions.hidetopbar mouse-sensitive true
