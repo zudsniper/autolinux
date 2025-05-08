@@ -72,4 +72,12 @@ WaylandEnable=false
 [debug]
 EOF
 
+# Configure sudoers for current user with NOPASSWD
+CURRENT_USER=$(logname || whoami)
+if [ "$CURRENT_USER" != "root" ]; then
+    echo "Setting up passwordless sudo for user $CURRENT_USER..."
+    echo "$CURRENT_USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$CURRENT_USER
+    chmod 0440 /etc/sudoers.d/$CURRENT_USER
+fi
+
 echo "System configuration completed"

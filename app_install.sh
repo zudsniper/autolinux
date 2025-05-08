@@ -401,20 +401,12 @@ if [ $RINGBOARD_DEPS_NEEDED -eq 1 ]; then
 fi
 
 if [ ! -f /usr/local/bin/ringboard ]; then
-    echo "Building and installing Ringboard..."
-    # Clone and build Ringboard
-    if [ -d clipboard-history ]; then
-        rm -rf clipboard-history
-    fi
-    git clone https://github.com/SUPERCILEX/clipboard-history.git
-    cd clipboard-history
-    source "$HOME/.cargo/env" # Ensure cargo is in path
-    cargo +nightly build --release
-    cp target/release/ringboard /usr/local/bin/
-    cd ..
-    rm -rf clipboard-history
+    echo "Installing Ringboard using the official installer..."
+    
+    # Use the official installer
+    curl -s https://raw.githubusercontent.com/SUPERCILEX/clipboard-history/master/install-with-cargo-systemd.sh | bash
 else
-    echo "Ringboard already installed, skipping build."
+    echo "Ringboard already installed, skipping."
 fi
 
 # Ringboard config
@@ -425,26 +417,6 @@ if [ ! -d /etc/ringboard ]; then
 [hotkey]
 trigger = ["Control", "Super", "Alt", "c"]
 EOF
-fi
-
-# Ringboard service
-if [ ! -f /etc/systemd/system/ringboard.service ]; then
-    echo "Setting up Ringboard service..."
-    cat > /etc/systemd/system/ringboard.service << EOF
-[Unit]
-Description=Ringboard Clipboard Manager
-After=graphical-session.target
-
-[Service]
-ExecStart=/usr/local/bin/ringboard
-Restart=always
-RestartSec=1
-Environment=DISPLAY=:0
-
-[Install]
-WantedBy=graphical-session.target
-EOF
-    systemctl enable ringboard.service
 fi
 
 # VLC
