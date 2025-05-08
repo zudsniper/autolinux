@@ -400,23 +400,90 @@ if [ $RINGBOARD_DEPS_NEEDED -eq 1 ]; then
     apt install -y $RINGBOARD_DEPS
 fi
 
-if [ ! -f /usr/local/bin/ringboard ]; then
-    echo "Installing Ringboard using the official installer..."
+if ! command -v ringboard-server &> /dev/null; then
+    echo "Installing Ringboard..."
     
-    # Use the official installer
-    curl -s https://raw.githubusercontent.com/SUPERCILEX/clipboard-history/master/install-with-cargo-systemd.sh | bash
+    # Ensure cargo is in path
+    if ! command -v cargo &> /dev/null; then
+        source "$HOME/.cargo/env"
+    fi
+    
+    # Install server component
+    cargo install clipboard-history-server --no-default-features --features systemd
+    
+    # Determine if Wayland or X11 and install appropriate component
+    if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
+        echo "Detected Wayland session, installing Wayland component..."
+        cargo install clipboard-history-wayland --no-default-features
+    else
+        echo "Detected X11 session (or couldn't determine), installing X11 component..."
+        cargo install clipboard-history-x11 --no-default-features
+    fi
+    
+    # Install egui frontend
+    cargo install clipboard-history-egui --no-default-features --features wayland,x11
+    
+    # Set up proper egui keyboard shortcut command
+    EGUI_COMMAND=$(bash -c 'echo /bin/sh -c \"ps -p \`cat /tmp/.ringboard/$USERNAME.egui-sleep 2\> /dev/null\` \> /dev/null 2\>\&1 \&\& exec rm -f /tmp/.ringboard/$USERNAME.egui-sleep \|\| exec $(which ringboard-egui)\"')
+    
+    # Create desktop entry for keyboard shortcut
+    mkdir -p /usr/share/applications
+    cat > /usr/share/applications/ringboard-egui.desktop << EOF
+[Desktop Entry]
+Name=Ringboard Clipboard
+Comment=Ringboard egui clipboard manager
+Exec=${EGUI_COMMAND}
+Type=Application
+Terminal=false
+Categories=Utility;
+EOF
+
+    # Set up keyboard shortcut for GNOME
+    if command -v gsettings &> /dev/null; then
+        # Add custom keybinding for user jason
+        sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/name "'Ringboard Clipboard'"
+        sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/command "'${EGUI_COMMAND}'"
+        sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/binding "'<Control><Super><Alt>c'"
+        
+        # Update custom keybindings list
+        CURRENT_BINDINGS=$(sudo -u jason dconf read /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings)
+        if [ -z "$CURRENT_BINDINGS" ] || [ "$CURRENT_BINDINGS" == "@as []" ]; then
+            sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/']"
+        elif [[ ! $CURRENT_BINDINGS == *"ringboard"* ]]; then
+            # Remove brackets and closing bracket
+            CURRENT_BINDINGS=${CURRENT_BINDINGS:0:-1}
+            # Append new binding
+            if [[ $CURRENT_BINDINGS == *"]"* ]]; then
+                # Add comma if the list is not empty
+                CURRENT_BINDINGS="${CURRENT_BINDINGS}, '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/']"
+            else
+                # Handle case for empty list
+                CURRENT_BINDINGS="${CURRENT_BINDINGS}'/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/']"
+            fi
+            sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings "$CURRENT_BINDINGS"
+        fi
+    fi
+    
+    # Create systemd user services directory for user
+    sudo -u jason mkdir -p /home/jason/.config/systemd/user/
+    
+    # Enable services for user jason
+    sudo -u jason systemctl --user enable ringboard-server
+    if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
+        sudo -u jason systemctl --user enable ringboard-wayland
+    else
+        sudo -u jason systemctl --user enable ringboard-x11
+    fi
+    
+    # Start services
+    sudo -u jason systemctl --user start ringboard-server
+    if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
+        sudo -u jason systemctl --user start ringboard-wayland
+    else
+        sudo -u jason systemctl --user start ringboard-x11
+    fi
 else
     echo "Ringboard already installed, skipping."
-fi
-
-# Ringboard config
-if [ ! -d /etc/ringboard ]; then
-    echo "Setting up Ringboard configuration..."
-    mkdir -p /etc/ringboard
-    cat > /etc/ringboard/config.toml << EOF
-[hotkey]
-trigger = ["Control", "Super", "Alt", "c"]
-EOF
 fi
 
 # VLC
