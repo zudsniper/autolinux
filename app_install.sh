@@ -534,7 +534,6 @@ if [ ! -f /usr/local/bin/kitty ]; then
     if [ -z "$REAL_USER" ] || [ "$REAL_USER" == "root" ]; then
         echo "Cannot determine the non-root user. Installing Kitty as root, but it may not be accessible in the desktop environment."
         curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin
-        ln -sf ~/.local/kitty.app/bin/kitty ~/.local/kitty.app/bin/kitten /usr/local/bin/
     else
         echo "Installing Kitty for user: $REAL_USER"
         
@@ -545,12 +544,29 @@ if [ ! -f /usr/local/bin/kitty ]; then
 set -e
 # Install kitty to the user's home directory
 curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin
+
+# Create symbolic links to add kitty and kitten to PATH
+mkdir -p ~/.local/bin
+ln -sf ~/.local/kitty.app/bin/kitty ~/.local/kitty.app/bin/kitten ~/.local/bin/
+
+# Place the kitty.desktop files
+mkdir -p ~/.local/share/applications
+cp ~/.local/kitty.app/share/applications/kitty.desktop ~/.local/share/applications/
+cp ~/.local/kitty.app/share/applications/kitty-open.desktop ~/.local/share/applications/
+
+# Update the paths in the desktop files
+sed -i "s|Icon=kitty|Icon=$(readlink -f ~)/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g" ~/.local/share/applications/kitty*.desktop
+sed -i "s|Exec=kitty|Exec=$(readlink -f ~)/.local/kitty.app/bin/kitty|g" ~/.local/share/applications/kitty*.desktop
+
+# Make kitty the default terminal in desktop environments that support xdg-terminal-exec
+mkdir -p ~/.config
+echo 'kitty.desktop' > ~/.config/xdg-terminals.list
 EOF
         
         chmod +x "$KITTY_SCRIPT"
         sudo -u "$REAL_USER" bash "$KITTY_SCRIPT"
         
-        # Create system-wide symlinks from user's installation
+        # Also create system-wide symlinks
         ln -sf "$REAL_HOME/.local/kitty.app/bin/kitty" "$REAL_HOME/.local/kitty.app/bin/kitten" /usr/local/bin/
         
         # Clean up
