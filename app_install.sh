@@ -25,7 +25,7 @@ is_service_enabled() {
 
 # Basic packages
 apt update && apt upgrade -y
-BASIC_PACKAGES="curl jq git fail2ban net-tools vim build-essential python3 python-is-python3 htop tmux openssh-server ca-certificates software-properties-common apt-transport-https gnupg lsb-release wget ethtool xclip p7zip-full icoutils imagemagick"
+BASIC_PACKAGES="curl jq git fail2ban net-tools vim build-essential python3 python-is-python3 htop tmux openssh-server ca-certificates software-properties-common apt-transport-https gnupg lsb-release wget ethtool xclip p7zip-full icoutils imagemagick ffmpeg btop nvtop"
 for pkg in $BASIC_PACKAGES; do
     if ! is_package_installed "$pkg"; then
         echo "Installing $pkg..."
