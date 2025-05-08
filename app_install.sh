@@ -565,17 +565,45 @@ if ! is_package_installed "claude-desktop"; then
         apt install -y $CLAUDE_DEPS
     fi
     
-    # Clone and build Claude Desktop
+    # Get the actual username (not root)
+    REAL_USER=$(logname 2>/dev/null || echo ${SUDO_USER:-${USER}})
+    REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+    
+    # Clone and build Claude Desktop as the non-root user
     cd /tmp
     if [ -d claude-desktop-debian ]; then
         rm -rf claude-desktop-debian
     fi
-    git clone https://github.com/aaddrick/claude-desktop-debian.git
-    cd claude-desktop-debian
-    ./build.sh --build deb --clean yes
-    apt install -y ./claude-desktop_*.deb
-    cd /tmp
-    rm -rf claude-desktop-debian
+    
+    # Create a temporary script to build as the non-root user
+    cat > /tmp/build_claude_desktop.sh << 'EOF'
+#!/bin/bash
+cd /tmp
+git clone https://github.com/aaddrick/claude-desktop-debian.git
+cd claude-desktop-debian
+./build.sh --build deb --clean yes
+echo "Build completed. The .deb file is in /tmp/claude-desktop-debian/"
+EOF
+    
+    # Make the script executable
+    chmod +x /tmp/build_claude_desktop.sh
+    
+    # Run the build script as the real user
+    echo "Running Claude Desktop build as user $REAL_USER..."
+    su - "$REAL_USER" -c "/tmp/build_claude_desktop.sh"
+    
+    # Install the built package as root
+    if [ -f /tmp/claude-desktop-debian/claude-desktop_*.deb ]; then
+        echo "Installing the built Claude Desktop package..."
+        apt install -y /tmp/claude-desktop-debian/claude-desktop_*.deb
+        echo "Claude Desktop installation completed."
+    else
+        echo "Failed to find the built Claude Desktop package."
+    fi
+    
+    # Clean up
+    rm -f /tmp/build_claude_desktop.sh
+    rm -rf /tmp/claude-desktop-debian
 else
     echo "Claude Desktop already installed, skipping."
 fi
