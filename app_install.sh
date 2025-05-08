@@ -25,7 +25,7 @@ is_service_enabled() {
 
 # Basic packages
 apt update && apt upgrade -y
-BASIC_PACKAGES="curl jq git fail2ban net-tools vim build-essential python3 python-is-python3 htop tmux openssh-server ca-certificates software-properties-common apt-transport-https gnupg lsb-release wget ethtool xclip"
+BASIC_PACKAGES="curl jq git fail2ban net-tools vim build-essential python3 python-is-python3 htop tmux openssh-server ca-certificates software-properties-common apt-transport-https gnupg lsb-release wget ethtool xclip p7zip-full icoutils imagemagick"
 for pkg in $BASIC_PACKAGES; do
     if ! is_package_installed "$pkg"; then
         echo "Installing $pkg..."
@@ -539,6 +539,7 @@ fi
 if ! is_package_installed "claude-desktop"; then
     echo "Installing Claude Desktop..."
     
+    # Install Node.js and npm if not already installed
     NODE_PACKAGES="npm nodejs"
     NODE_NEEDED=0
     for pkg in $NODE_PACKAGES; do
@@ -552,6 +553,7 @@ if ! is_package_installed "claude-desktop"; then
         apt install -y $NODE_PACKAGES
     fi
     
+    # Install Claude Desktop runtime dependencies
     CLAUDE_DEPS="libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libuuid1 libsecret-1-0"
     CLAUDE_DEPS_NEEDED=0
     for pkg in $CLAUDE_DEPS; do
@@ -569,41 +571,53 @@ if ! is_package_installed "claude-desktop"; then
     REAL_USER=$(logname 2>/dev/null || echo ${SUDO_USER:-${USER}})
     REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
     
-    # Clone and build Claude Desktop as the non-root user
-    cd /tmp
-    if [ -d claude-desktop-debian ]; then
-        rm -rf claude-desktop-debian
-    fi
-    
-    # Create a temporary script to build as the non-root user
-    cat > /tmp/build_claude_desktop.sh << 'EOF'
+    if [ -z "$REAL_USER" ] || [ "$REAL_USER" == "root" ]; then
+        echo "Cannot determine the non-root user. Claude Desktop installation requires a non-root user for building."
+        echo "Please run this script with sudo from a normal user account."
+        # Skip but don't fail
+        echo "Skipping Claude Desktop installation."
+    else
+        echo "Detected non-root user: $REAL_USER"
+        
+        # Ensure the temporary directory is accessible
+        TMP_BUILD_DIR="/tmp/claude-desktop-build"
+        rm -rf "$TMP_BUILD_DIR"
+        mkdir -p "$TMP_BUILD_DIR"
+        chown "$REAL_USER" "$TMP_BUILD_DIR"
+        
+        # Create a build script to run as normal user
+        BUILD_SCRIPT="$TMP_BUILD_DIR/build_claude.sh"
+        cat > "$BUILD_SCRIPT" << 'EOF'
 #!/bin/bash
-cd /tmp
+set -e
+cd "$(dirname "$0")"
 git clone https://github.com/aaddrick/claude-desktop-debian.git
 cd claude-desktop-debian
 ./build.sh --build deb --clean yes
-echo "Build completed. The .deb file is in /tmp/claude-desktop-debian/"
+# Copy the built deb file to the parent directory for the root script to find
+cp ./claude-desktop_*.deb ../
 EOF
-    
-    # Make the script executable
-    chmod +x /tmp/build_claude_desktop.sh
-    
-    # Run the build script as the real user
-    echo "Running Claude Desktop build as user $REAL_USER..."
-    su - "$REAL_USER" -c "/tmp/build_claude_desktop.sh"
-    
-    # Install the built package as root
-    if [ -f /tmp/claude-desktop-debian/claude-desktop_*.deb ]; then
-        echo "Installing the built Claude Desktop package..."
-        apt install -y /tmp/claude-desktop-debian/claude-desktop_*.deb
-        echo "Claude Desktop installation completed."
-    else
-        echo "Failed to find the built Claude Desktop package."
+        
+        # Make script executable and set ownership
+        chmod +x "$BUILD_SCRIPT"
+        chown "$REAL_USER" "$BUILD_SCRIPT"
+        
+        # Run the build script as the regular user
+        echo "Running build script as user $REAL_USER..."
+        su - "$REAL_USER" -c "cd \"$TMP_BUILD_DIR\" && ./build_claude.sh"
+        
+        # Check if the build was successful and install the package
+        if [ -f "$TMP_BUILD_DIR/claude-desktop_"*.deb ]; then
+            echo "Build successful. Installing Claude Desktop..."
+            apt install -y "$TMP_BUILD_DIR"/claude-desktop_*.deb
+            echo "Claude Desktop installation completed."
+        else
+            echo "Failed to build Claude Desktop. The .deb package was not found."
+        fi
+        
+        # Clean up
+        rm -rf "$TMP_BUILD_DIR"
     fi
-    
-    # Clean up
-    rm -f /tmp/build_claude_desktop.sh
-    rm -rf /tmp/claude-desktop-debian
 else
     echo "Claude Desktop already installed, skipping."
 fi
