@@ -58,18 +58,12 @@ su - "$REAL_USER" -c "cd $TEMP_DIR && \
   wget https://github.com/hardpixel/unite-shell/releases/download/${UNITE_VERSION}/unite-${UNITE_VERSION}.zip -O unite.zip && \
   gnome-extensions install --force unite.zip" || handle_error "Failed to install Unite"
 
-echo "Installing Hide Top Bar..."
-if command -v apt &> /dev/null; then
-  # Debian/Ubuntu method
-  apt install -y gnome-shell-extension-autohidetopbar || handle_error "Failed to install Hide Top Bar via apt"
-else
-  # Source method
-  su - "$REAL_USER" -c "cd $TEMP_DIR && \
-    git clone https://gitlab.gnome.org/tuxor1337/hidetopbar.git && \
-    cd hidetopbar && \
-    make && \
-    gnome-extensions install ./hidetopbar.zip" || handle_error "Failed to install Hide Top Bar from source"
-fi
+echo "Installing Hide Top Bar from source..."
+su - "$REAL_USER" -c "cd $TEMP_DIR && \
+  git clone https://gitlab.gnome.org/tuxor1337/hidetopbar.git && \
+  cd hidetopbar && \
+  make && \
+  gnome-extensions install ./hidetopbar.zip" || handle_error "Failed to install Hide Top Bar from source"
 
 echo "Installing Just Perfection..."
 su - "$REAL_USER" -c "cd $TEMP_DIR && \
