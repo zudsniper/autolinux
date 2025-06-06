@@ -1,8 +1,8 @@
 #!/bin/bash
-# Configures system settings
+# Configures system settings for headless/server installations
 
 set -e
-echo "Configuring system..."
+echo "Configuring headless system..."
 
 # Create swap if needed (16GB)
 # Ensure a swap partition of 16-17GB on the OS drive is active and configured
@@ -51,7 +51,7 @@ echo "Root disk identifier: $ROOT_DISK_ID"
 
 FOUND_CORRECT_SWAP=false
 IFS_BAK=$IFS
-IFS=$'\\n' # Handle spaces in device names if any, though unlikely for swap
+IFS=$'\n' # Handle spaces in device names if any, though unlikely for swap
 for line in $(swapon --show | grep -v '^NAME'); do
     IFS=$IFS_BAK # Restore IFS for read
     # Using awk to handle potentially varying whitespace
@@ -152,23 +152,6 @@ netplan apply
 systemctl enable ssh
 systemctl start ssh
 
-# Set X11 as default display manager
-cat > /etc/gdm3/custom.conf << EOF
-# GDM configuration storage
-
-[daemon]
-# Force the login screen to use Xorg
-WaylandEnable=false
-
-[security]
-
-[xdmcp]
-
-[chooser]
-
-[debug]
-EOF
-
 # Configure sudoers for current user with NOPASSWD
 CURRENT_USER=$(logname || whoami)
 if [ "$CURRENT_USER" != "root" ]; then
@@ -177,4 +160,7 @@ if [ "$CURRENT_USER" != "root" ]; then
     chmod 0440 /etc/sudoers.d/$CURRENT_USER
 fi
 
-echo "System configuration completed"
+# Set default target to multi-user (console only, no GUI)
+systemctl set-default multi-user.target
+
+echo "Headless system configuration completed" 
