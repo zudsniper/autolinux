@@ -1,6 +1,33 @@
 #!/bin/bash
-set -e
 echo "Installing applications..."
+
+# Initialize error tracking
+FAILED_INSTALLS=()
+INSTALL_STATUS_FILE="/tmp/autolinux_install_status.txt"
+echo "# AutoLinux Installation Status - $(date)" > "$INSTALL_STATUS_FILE"
+
+# Helper function to track failures
+track_failure() {
+    local component="$1"
+    local error_msg="$2"
+    FAILED_INSTALLS+=("$component")
+    echo "FAILED: $component - $error_msg" >> "$INSTALL_STATUS_FILE"
+    echo "❌ $component installation failed: $error_msg"
+}
+
+# Helper function to track success
+track_success() {
+    local component="$1"
+    echo "SUCCESS: $component" >> "$INSTALL_STATUS_FILE"
+    echo "✅ $component installed successfully"
+}
+
+# Helper function to track skipped
+track_skipped() {
+    local component="$1"
+    echo "SKIPPED: $component - already installed" >> "$INSTALL_STATUS_FILE"
+    echo "⏭️  $component already installed, skipping"
+}
 
 # Helper functions
 is_package_installed() {
@@ -24,54 +51,91 @@ is_service_enabled() {
 }
 
 # Basic packages
-apt update && apt upgrade -y
+echo "Updating package lists..."
+if apt update && apt upgrade -y; then
+    track_success "System Update"
+else
+    track_failure "System Update" "Failed to update system packages"
+fi
+
 BASIC_PACKAGES="curl jq git fail2ban net-tools vim build-essential python3 python-is-python3 htop tmux openssh-server ca-certificates software-properties-common apt-transport-https gnupg lsb-release wget ethtool xclip p7zip-full icoutils imagemagick ffmpeg btop nvtop"
 for pkg in $BASIC_PACKAGES; do
     if ! is_package_installed "$pkg"; then
         echo "Installing $pkg..."
-        apt install -y "$pkg"
+        if apt install -y "$pkg" 2>/dev/null; then
+            track_success "$pkg"
+        else
+            track_failure "$pkg" "APT installation failed"
+        fi
     else
-        echo "$pkg already installed, skipping."
+        track_skipped "$pkg"
     fi
 done
 
 # Flatpak
 if ! is_package_installed "flatpak"; then
     echo "Installing flatpak..."
-    apt install -y flatpak
+    if apt install -y flatpak 2>/dev/null; then
+        track_success "flatpak"
+    else
+        track_failure "flatpak" "APT installation failed"
+    fi
+else
+    track_skipped "flatpak"
 fi
 
 if ! flatpak remotes | grep -q "flathub"; then
     echo "Adding flathub repository..."
-    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+    if flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo 2>/dev/null; then
+        track_success "flathub repository"
+    else
+        track_failure "flathub repository" "Failed to add repository"
+    fi
+else
+    track_skipped "flathub repository"
 fi
 
 # Flatseal
 if ! is_flatpak_installed "com.github.tchx84.Flatseal"; then
     echo "Installing Flatseal..."
-    flatpak install -y flathub com.github.tchx84.Flatseal
+    if flatpak install -y flathub com.github.tchx84.Flatseal 2>/dev/null; then
+        track_success "Flatseal"
+    else
+        track_failure "Flatseal" "Flatpak installation failed"
+    fi
 else
-    echo "Flatseal already installed, skipping."
+    track_skipped "Flatseal"
 fi
 
 # Steam (via flatpak)
 if ! is_flatpak_installed "com.valvesoftware.Steam"; then
     echo "Installing Steam..."
-    flatpak install -y flathub com.valvesoftware.Steam
+    if flatpak install -y flathub com.valvesoftware.Steam 2>/dev/null; then
+        track_success "Steam"
+    else
+        track_failure "Steam" "Flatpak installation failed"
+    fi
 else
-    echo "Steam already installed, skipping."
+    track_skipped "Steam"
 fi
 
 # Google Chrome
 if ! is_package_installed "google-chrome-stable"; then
     echo "Installing Google Chrome..."
     if [ ! -f google-chrome-stable_current_amd64.deb ]; then
-        wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+        if wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb; then
+            if apt install -y ./google-chrome-stable_current_amd64.deb 2>/dev/null; then
+                track_success "Google Chrome"
+            else
+                track_failure "Google Chrome" "Package installation failed"
+            fi
+            rm -f google-chrome-stable_current_amd64.deb
+        else
+            track_failure "Google Chrome" "Download failed"
+        fi
     fi
-    apt install -y ./google-chrome-stable_current_amd64.deb
-    rm -f google-chrome-stable_current_amd64.deb
 else
-    echo "Google Chrome already installed, skipping."
+    track_skipped "Google Chrome"
 fi
 
 # 1Password
@@ -84,25 +148,37 @@ if ! is_package_installed "1password"; then
         echo "deb [arch=amd64 signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/amd64 stable main" | tee /etc/apt/sources.list.d/1password.list
         apt update
     fi
-    apt install -y 1password 1password-cli
+    if apt install -y 1password 1password-cli 2>/dev/null; then
+        track_success "1Password"
+    else
+        track_failure "1Password" "APT installation failed"
+    fi
 else
-    echo "1Password already installed, skipping."
+    track_skipped "1Password"
 fi
 
 # RustDesk
 if ! is_flatpak_installed "com.rustdesk.RustDesk"; then
     echo "Installing RustDesk..."
-    flatpak install -y flathub com.rustdesk.RustDesk
+    if flatpak install -y flathub com.rustdesk.RustDesk 2>/dev/null; then
+        track_success "RustDesk"
+    else
+        track_failure "RustDesk" "Flatpak installation failed"
+    fi
 else
-    echo "RustDesk already installed, skipping."
+    track_skipped "RustDesk"
 fi
 
 # Discord
 if ! is_flatpak_installed "com.discordapp.Discord"; then
     echo "Installing Discord..."
-    flatpak install -y flathub com.discordapp.Discord
+    if flatpak install -y flathub com.discordapp.Discord 2>/dev/null; then
+        track_success "Discord"
+    else
+        track_failure "Discord" "Flatpak installation failed"
+    fi
 else
-    echo "Discord already installed, skipping."
+    track_skipped "Discord"
 fi
 
 # Discord startup notification
@@ -166,9 +242,13 @@ fi
 # Spotify
 if ! is_flatpak_installed "com.spotify.Client"; then
     echo "Installing Spotify..."
-    flatpak install -y flathub com.spotify.Client
+    if flatpak install -y flathub com.spotify.Client 2>/dev/null; then
+        track_success "Spotify"
+    else
+        track_failure "Spotify" "Flatpak installation failed"
+    fi
 else
-    echo "Spotify already installed, skipping."
+    track_skipped "Spotify"
 fi
 
 # QEMU & virt-manager
@@ -183,9 +263,13 @@ done
 
 if [ $QEMU_NEEDED -eq 1 ]; then
     echo "Installing QEMU and virt-manager..."
-    apt install -y $QEMU_PACKAGES
+    if apt install -y $QEMU_PACKAGES 2>/dev/null; then
+        track_success "QEMU and virt-manager"
+    else
+        track_failure "QEMU and virt-manager" "APT installation failed"
+    fi
 else
-    echo "QEMU and virt-manager already installed, skipping."
+    track_skipped "QEMU and virt-manager"
 fi
 
 # pyenv
@@ -231,9 +315,13 @@ if ! is_package_installed "gh"; then
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
         apt update
     fi
-    apt install -y gh
+    if apt install -y gh 2>/dev/null; then
+        track_success "GitHub CLI"
+    else
+        track_failure "GitHub CLI" "APT installation failed"
+    fi
 else
-    echo "GitHub CLI already installed, skipping."
+    track_skipped "GitHub CLI"
 fi
 
 # VS Code
@@ -246,17 +334,25 @@ if ! is_package_installed "code"; then
         echo "deb [arch=amd64 signed-by=/usr/share/keyrings/vscode.gpg] https://packages.microsoft.com/repos/vscode stable main" | tee /etc/apt/sources.list.d/vscode.list > /dev/null
         apt update
     fi
-    apt install -y code
+    if apt install -y code 2>/dev/null; then
+        track_success "VS Code"
+    else
+        track_failure "VS Code" "APT installation failed"
+    fi
 else
-    echo "VS Code already installed, skipping."
+    track_skipped "VS Code"
 fi
 
 # Cursor
 if ! command -v cursor &> /dev/null; then
     echo "Installing Cursor..."
-    curl -fsSL https://gist.githubusercontent.com/tatosjb/0ca8551406499d52d449936964e9c1d6/raw/5d6ad7ede60611dafa30ad29a4b8caabb671db5b/install-cursor-sh | bash
+    if curl -fsSL https://gist.githubusercontent.com/tatosjb/0ca8551406499d52d449936964e9c1d6/raw/5d6ad7ede60611dafa30ad29a4b8caabb671db5b/install-cursor-sh | bash 2>/dev/null; then
+        track_success "Cursor"
+    else
+        track_failure "Cursor" "Installation script failed"
+    fi
 else
-    echo "Cursor already installed, skipping."
+    track_skipped "Cursor"
 fi
 
 # Docker
@@ -395,7 +491,7 @@ if ! check_rust_installed; then
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     source "$HOME/.cargo/env" || true
     rustup toolchain install nightly
-    rustup default stable
+    rustup default nightly
 else
     echo "Rust already installed, skipping."
     # Ensure environment is sourced
@@ -406,6 +502,9 @@ else
         echo "Installing Rust nightly toolchain..."
         rustup toolchain install nightly
     fi
+    
+    # Set nightly as default for Ringboard compatibility
+    rustup default nightly
 fi
 
 # Ringboard - fixed dependency approach
@@ -429,20 +528,41 @@ if ! command -v ringboard-server &> /dev/null; then
     # Make sure Rust environment is sourced (it should be from earlier step)
     source "$HOME/.cargo/env" 2>/dev/null || true
     
-    # Install server component
-    cargo install clipboard-history-server --no-default-features --features systemd
+    # Ensure we're using nightly toolchain for Ringboard
+    rustup default nightly
+    
+    # Install server component with nightly
+    if cargo +nightly install clipboard-history-server --no-default-features --features systemd 2>/dev/null; then
+        echo "✅ Ringboard server installed"
+    else
+        track_failure "Ringboard server" "Cargo installation failed"
+        echo "Ringboard server installation failed, skipping remaining components."
+    fi
     
     # Determine if Wayland or X11 and install appropriate component
     if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
         echo "Detected Wayland session, installing Wayland component..."
-        cargo install clipboard-history-wayland --no-default-features
+        if cargo +nightly install clipboard-history-wayland --no-default-features 2>/dev/null; then
+            echo "✅ Ringboard Wayland component installed"
+        else
+            track_failure "Ringboard Wayland component" "Cargo installation failed"
+        fi
     else
         echo "Detected X11 session (or couldn't determine), installing X11 component..."
-        cargo install clipboard-history-x11 --no-default-features
+        if cargo +nightly install clipboard-history-x11 --no-default-features 2>/dev/null; then
+            echo "✅ Ringboard X11 component installed"
+        else
+            track_failure "Ringboard X11 component" "Cargo installation failed"
+        fi
     fi
     
-    # Install egui frontend
-    cargo install clipboard-history-egui --no-default-features --features wayland,x11
+    # Install egui frontend with nightly
+    if cargo +nightly install clipboard-history-egui --no-default-features --features wayland,x11 2>/dev/null; then
+        echo "✅ Ringboard GUI component installed"
+        track_success "Ringboard"
+    else
+        track_failure "Ringboard GUI component" "Cargo installation failed"
+    fi
     
     # Set up proper egui keyboard shortcut command
     EGUI_COMMAND=$(bash -c 'echo /bin/sh -c \"ps -p \`cat /tmp/.ringboard/$USERNAME.egui-sleep 2\> /dev/null\` \> /dev/null 2\>\&1 \&\& exec rm -f /tmp/.ringboard/$USERNAME.egui-sleep \|\| exec $(which ringboard-egui)\"')
@@ -459,17 +579,17 @@ Terminal=false
 Categories=Utility;
 EOF
 
-    # Set up keyboard shortcut for GNOME
+    # Set up keyboard shortcut for GNOME (suppress errors)
     if command -v gsettings &> /dev/null; then
-        # Add custom keybinding for user jason
-        sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/name "'Ringboard Clipboard'"
-        sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/command "'${EGUI_COMMAND}'"
-        sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/binding "'<Control><Super><Alt>v'"
+        # Add custom keybinding for user jason (suppress systemd errors)
+        sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/name "'Ringboard Clipboard'" 2>/dev/null || true
+        sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/command "'${EGUI_COMMAND}'" 2>/dev/null || true
+        sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/binding "'<Control><Super><Alt>v'" 2>/dev/null || true
         
         # Update custom keybindings list
-        CURRENT_BINDINGS=$(sudo -u jason dconf read /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings)
+        CURRENT_BINDINGS=$(sudo -u jason dconf read /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings 2>/dev/null || echo "@as []")
         if [ -z "$CURRENT_BINDINGS" ] || [ "$CURRENT_BINDINGS" == "@as []" ]; then
-            sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/']"
+            sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/']" 2>/dev/null || true
         elif [[ ! $CURRENT_BINDINGS == *"ringboard"* ]]; then
             # Remove brackets and closing bracket
             CURRENT_BINDINGS=${CURRENT_BINDINGS:0:-1}
@@ -481,46 +601,54 @@ EOF
                 # Handle case for empty list
                 CURRENT_BINDINGS="${CURRENT_BINDINGS}'/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ringboard/']"
             fi
-            sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings "$CURRENT_BINDINGS"
+            sudo -u jason dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings "$CURRENT_BINDINGS" 2>/dev/null || true
         fi
     fi
     
     # Create systemd user services directory for user
-    sudo -u jason mkdir -p /home/jason/.config/systemd/user/
+    sudo -u jason mkdir -p /home/jason/.config/systemd/user/ 2>/dev/null || true
     
-    # Enable services for user jason
-    sudo -u jason systemctl --user enable ringboard-server
+    # Enable services for user jason (suppress D-Bus errors)
+    sudo -u jason systemctl --user enable ringboard-server 2>/dev/null || true
     if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
-        sudo -u jason systemctl --user enable ringboard-wayland
+        sudo -u jason systemctl --user enable ringboard-wayland 2>/dev/null || true
     else
-        sudo -u jason systemctl --user enable ringboard-x11
+        sudo -u jason systemctl --user enable ringboard-x11 2>/dev/null || true
     fi
     
-    # Start services
-    sudo -u jason systemctl --user start ringboard-server
+    # Start services (suppress D-Bus errors)
+    sudo -u jason systemctl --user start ringboard-server 2>/dev/null || true
     if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
-        sudo -u jason systemctl --user start ringboard-wayland
+        sudo -u jason systemctl --user start ringboard-wayland 2>/dev/null || true
     else
-        sudo -u jason systemctl --user start ringboard-x11
+        sudo -u jason systemctl --user start ringboard-x11 2>/dev/null || true
     fi
 else
-    echo "Ringboard already installed, skipping."
+    track_skipped "Ringboard"
 fi
 
 # VLC
 if ! is_package_installed "vlc"; then
     echo "Installing VLC..."
-    apt install -y vlc
+    if apt install -y vlc 2>/dev/null; then
+        track_success "VLC"
+    else
+        track_failure "VLC" "APT installation failed"
+    fi
 else
-    echo "VLC already installed, skipping."
+    track_skipped "VLC"
 fi
 
 # Transmission
 if ! is_package_installed "transmission-gtk"; then
     echo "Installing Transmission..."
-    apt install -y transmission-gtk
+    if apt install -y transmission-gtk 2>/dev/null; then
+        track_success "Transmission"
+    else
+        track_failure "Transmission" "APT installation failed"
+    fi
 else
-    echo "Transmission already installed, skipping."
+    track_skipped "Transmission"
 fi
 
 # Kitty terminal
@@ -666,3 +794,25 @@ else
 fi
 
 echo "Application installation completed"
+
+# Display installation summary
+echo ""
+echo "================================="
+echo "     INSTALLATION SUMMARY"
+echo "================================="
+
+if [ ${#FAILED_INSTALLS[@]} -eq 0 ]; then
+    echo "🎉 All applications installed successfully!"
+else
+    echo "⚠️  Some installations failed:"
+    for failed in "${FAILED_INSTALLS[@]}"; do
+        echo "  ❌ $failed"
+    done
+    echo ""
+    echo "📄 Full details available in: $INSTALL_STATUS_FILE"
+    echo ""
+    echo "💡 You can re-run this script to retry failed installations."
+fi
+
+echo ""
+echo "Installation status saved to: $INSTALL_STATUS_FILE"
