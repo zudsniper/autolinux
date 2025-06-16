@@ -4,13 +4,13 @@
 set -e
 echo "Configuring headless system..."
 
-# Create swap if needed (16GB)
-# Ensure a swap partition of 16-17GB on the OS drive is active and configured
+# Create swap if needed (≥8GB)
+# Ensure a swap partition of ≥8GB on the OS drive is active and configured
 echo "Verifying swap partition configuration..."
 ACTIVE_SWAP_COUNT=$(swapon --show | grep -v '^NAME' | wc -l)
 
 if [ "$ACTIVE_SWAP_COUNT" -eq 0 ]; then
-    echo "Error: No active swap found. Please configure a swap partition of ~16-17GB on the OS drive." >&2
+    echo "Error: No active swap found. Please configure a swap partition of ≥8GB on the OS drive." >&2
     exit 1
 fi
 
@@ -64,11 +64,11 @@ for line in $(swapon --show | grep -v '^NAME'); do
         continue
     fi
 
-    # Size check (15.9G to 17.1G to be safe)
+    # Size check (≥8GB)
     SIZE_VALUE_G=$(echo "$SWAP_SIZE_STR" | sed 's/[gG]$//')
-    IS_SIZE_CORRECT=$(awk -v val="$SIZE_VALUE_G" 'BEGIN { if (val >= 15.9 && val <= 17.1) { exit 0 } else { exit 1 } }')
+    IS_SIZE_CORRECT=$(awk -v val="$SIZE_VALUE_G" 'BEGIN { if (val >= 8) { exit 0 } else { exit 1 } }')
     if ! $IS_SIZE_CORRECT; then
-        echo "Skipping swap $SWAP_NAME: size $SWAP_SIZE_STR is not within 16-17GB range."
+        echo "Skipping swap $SWAP_NAME: size $SWAP_SIZE_STR is less than 8GB."
         continue
     fi
 
@@ -106,7 +106,7 @@ IFS=$IFS_BAK # Restore IFS fully
 
 if [ "$FOUND_CORRECT_SWAP" = false ]; then
     echo "Error: Could not find a correctly configured active swap partition." >&2
-    echo "Requirements: type 'partition', size ~16-17GB, on the same disk as root filesystem, and listed in /etc/fstab." >&2
+    echo "Requirements: type 'partition', size ≥8GB, on the same disk as root filesystem, and listed in /etc/fstab." >&2
     exit 1
 fi
 

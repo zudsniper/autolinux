@@ -343,17 +343,17 @@ else
     track_skipped "VS Code"
 fi
 
-# Cursor
-if ! command -v cursor &> /dev/null; then
-    echo "Installing Cursor..."
-    if curl -fsSL https://gist.githubusercontent.com/tatosjb/0ca8551406499d52d449936964e9c1d6/raw/5d6ad7ede60611dafa30ad29a4b8caabb671db5b/install-cursor-sh | bash 2>/dev/null; then
-        track_success "Cursor"
-    else
-        track_failure "Cursor" "Installation script failed"
-    fi
-else
-    track_skipped "Cursor"
-fi
+# Cursor - DISABLED: Broken installation script
+# if ! command -v cursor &> /dev/null; then
+#     echo "Installing Cursor..."
+#     if curl -fsSL https://gist.githubusercontent.com/tatosjb/0ca8551406499d52d449936964e9c1d6/raw/5d6ad7ede60611dafa30ad29a4b8caabb671db5b/install-cursor-sh | bash 2>/dev/null; then
+#         track_success "Cursor"
+#     else
+#         track_failure "Cursor" "Installation script failed"
+#     fi
+# else
+#     track_skipped "Cursor"
+# fi
 
 # Docker
 if ! command -v docker &> /dev/null; then
