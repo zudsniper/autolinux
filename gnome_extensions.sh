@@ -48,7 +48,7 @@ log_info "Installing extensions for user: ${CYAN}$REAL_USER${NC}"
 log_info "Installing required dependencies..."
 apt update
 apt install -y gnome-shell-extensions gnome-shell-extension-manager gnome-tweaks \
-  git x11-utils gettext libglib2.0-dev unzip wget
+  git x11-utils gettext unzip wget build-essential
 
 # Check for npm, install if not found
 if ! command -v npm &> /dev/null; then
