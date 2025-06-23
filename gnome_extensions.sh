@@ -122,17 +122,7 @@ else
   log_success "Tiling Shell installed successfully."
 fi
 
-# Install Unite
-if is_extension_installed "unite@hardpixel.eu"; then
-  log_success "Unite is already installed, skipping..."
-else
-  log_header "Installing Unite..."
-  UNITE_VERSION="v82"
-  su - "$REAL_USER" -c "cd $TEMP_DIR && \
-    wget https://github.com/hardpixel/unite-shell/releases/download/${UNITE_VERSION}/unite-${UNITE_VERSION}.zip -O unite.zip && \
-    gnome-extensions install --force unite.zip" || handle_error "Failed to install Unite"
-  log_success "Unite installed successfully."
-fi
+# Unite extension removed due to instability
 
 # Install Hide Top Bar
 if is_extension_installed "hidetopbar@mathieu.bidon.ca"; then
@@ -205,7 +195,7 @@ if gsettings get org.gnome.shell disable-user-extensions | grep -q "true"; then
 fi
 
 # Enable extensions
-for extension in tilingshell@ferrarodomenico.com unite@hardpixel.eu hidetopbar@mathieu.bidon.ca; do
+for extension in tilingshell@ferrarodomenico.com hidetopbar@mathieu.bidon.ca; do
   log_info "Enabling extension: $extension"
   gnome-extensions enable "$extension" && log_success "Enabled $extension" || log_error "Failed to enable $extension"
 done
@@ -215,12 +205,7 @@ log_info "Configuring extension settings"
 # Tiling Shell settings - adjust if specific settings are needed
 # Currently using default settings
 
-# Unite
-gsettings set org.gnome.shell.extensions.unite hide-activities-button true
-gsettings set org.gnome.shell.extensions.unite hide-window-titlebars 'always'
-gsettings set org.gnome.shell.extensions.unite show-window-buttons 'always'
-gsettings set org.gnome.shell.extensions.unite show-window-title 'never'
-log_success "Configured Unite"
+# Unite extension removed due to instability
 
 # Hide Top Bar
 gsettings set org.gnome.shell.extensions.hidetopbar mouse-sensitive true
