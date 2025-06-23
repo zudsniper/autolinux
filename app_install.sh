@@ -72,6 +72,27 @@ for pkg in $BASIC_PACKAGES; do
     fi
 done
 
+# Runtime dependencies for desktop applications
+RUNTIME_PACKAGES="libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libuuid1 libsecret-1-0"
+RUNTIME_NEEDED=0
+for pkg in $RUNTIME_PACKAGES; do
+    if ! is_package_installed "$pkg"; then
+        RUNTIME_NEEDED=1
+        break
+    fi
+done
+
+if [ $RUNTIME_NEEDED -eq 1 ]; then
+    echo "Installing runtime dependencies for desktop applications..."
+    if apt install -y $RUNTIME_PACKAGES 2>/dev/null; then
+        track_success "Runtime Dependencies"
+    else
+        track_failure "Runtime Dependencies" "APT installation failed"
+    fi
+else
+    track_skipped "Runtime Dependencies"
+fi
+
 # Flatpak
 if ! is_package_installed "flatpak"; then
     echo "Installing flatpak..."
@@ -709,88 +730,21 @@ fi
 # Claude Desktop
 if ! is_package_installed "claude-desktop"; then
     echo "Installing Claude Desktop..."
+    DEB_URL="https://github.com/aaddrick/claude-desktop-debian/releases/download/v1.1.2%2Bclaude0.9.2/claude-desktop_0.9.2_amd64.deb"
+    TMP_DEB="/tmp/claude-desktop.deb"
     
-    # Install Node.js and npm if not already installed
-    NODE_PACKAGES="npm nodejs"
-    NODE_NEEDED=0
-    for pkg in $NODE_PACKAGES; do
-        if ! is_package_installed "$pkg"; then
-            NODE_NEEDED=1
-            break
-        fi
-    done
-    
-    if [ $NODE_NEEDED -eq 1 ]; then
-        apt install -y $NODE_PACKAGES
-    fi
-    
-    # Install Claude Desktop runtime dependencies
-    CLAUDE_DEPS="libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libuuid1 libsecret-1-0"
-    CLAUDE_DEPS_NEEDED=0
-    for pkg in $CLAUDE_DEPS; do
-        if ! is_package_installed "$pkg"; then
-            CLAUDE_DEPS_NEEDED=1
-            break
-        fi
-    done
-    
-    if [ $CLAUDE_DEPS_NEEDED -eq 1 ]; then
-        apt install -y $CLAUDE_DEPS
-    fi
-    
-    # Get the actual username (not root)
-    REAL_USER=$(logname 2>/dev/null || echo ${SUDO_USER:-${USER}})
-    REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
-    
-    if [ -z "$REAL_USER" ] || [ "$REAL_USER" == "root" ]; then
-        echo "Cannot determine the non-root user. Claude Desktop installation requires a non-root user for building."
-        echo "Please run this script with sudo from a normal user account."
-        # Skip but don't fail
-        echo "Skipping Claude Desktop installation."
-    else
-        echo "Detected non-root user: $REAL_USER"
-        
-        # Ensure the temporary directory is accessible
-        TMP_BUILD_DIR="/tmp/claude-desktop-build"
-        rm -rf "$TMP_BUILD_DIR"
-        mkdir -p "$TMP_BUILD_DIR"
-        chown "$REAL_USER" "$TMP_BUILD_DIR"
-        
-        # Create a build script to run as normal user
-        BUILD_SCRIPT="$TMP_BUILD_DIR/build_claude.sh"
-        cat > "$BUILD_SCRIPT" << 'EOF'
-#!/bin/bash
-set -e
-cd "$(dirname "$0")"
-git clone https://github.com/aaddrick/claude-desktop-debian.git
-cd claude-desktop-debian
-./build.sh --build deb --clean yes
-# Copy the built deb file to the parent directory for the root script to find
-cp ./claude-desktop_*.deb ../
-EOF
-        
-        # Make script executable and set ownership
-        chmod +x "$BUILD_SCRIPT"
-        chown "$REAL_USER" "$BUILD_SCRIPT"
-        
-        # Run the build script as the regular user
-        echo "Running build script as user $REAL_USER..."
-        su - "$REAL_USER" -c "cd \"$TMP_BUILD_DIR\" && ./build_claude.sh"
-        
-        # Check if the build was successful and install the package
-        if [ -f "$TMP_BUILD_DIR/claude-desktop_"*.deb ]; then
-            echo "Build successful. Installing Claude Desktop..."
-            apt install -y "$TMP_BUILD_DIR"/claude-desktop_*.deb
-            echo "Claude Desktop installation completed."
+    if wget -qO "$TMP_DEB" "$DEB_URL"; then
+        if apt install -y "$TMP_DEB" 2>/dev/null; then
+            track_success "Claude Desktop"
         else
-            echo "Failed to build Claude Desktop. The .deb package was not found."
+            track_failure "Claude Desktop" "Package installation failed"
         fi
-        
-        # Clean up
-        rm -rf "$TMP_BUILD_DIR"
+        rm -f "$TMP_DEB"
+    else
+        track_failure "Claude Desktop" "Download failed"
     fi
 else
-    echo "Claude Desktop already installed, skipping."
+    track_skipped "Claude Desktop"
 fi
 
 echo "Application installation completed"
