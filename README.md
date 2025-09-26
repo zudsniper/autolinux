@@ -60,9 +60,27 @@ sudo ./gnome_extensions.sh
 # OR for Just Perfection only:
 sudo ./install_just_perfection.sh
 
-# 5. Reboot to apply all changes
+# 5. (Optional) Install Firefox extensions
+./firefox_extensions_helper.sh
+
+# 6. Reboot to apply all changes
 sudo reboot
 ```
+
+### Post-Installation Steps:
+
+After rebooting, you may need to complete some manual installations:
+
+1. **Firefox Extensions** (if not installed via helper script):
+   - Run `./firefox_extensions_helper.sh` to open all extension pages
+   - Or manually visit each extension page and click "Add to Firefox"
+
+2. **CLI Tools** (if you ran in headless mode):
+   ```bash
+   # After Node.js is installed via nvm:
+   npm install -g @anthropic-ai/claude-code
+   npm install -g openai
+   ```
 
 ### For Existing Installation with Separate Home Partition:
 
@@ -86,7 +104,12 @@ sudo reboot
 
 #### `app_install.sh` 📦
 **Purpose**: Installs development tools, applications, and services
-- **Development Tools**: VS Code, Cursor, Docker, GitHub CLI, pyenv, nvm, Rust
+- **Development Tools**: VS Code, Docker, GitHub CLI, pyenv, nvm, Rust
+- **Node.js & CLI Tools**:
+  - NVM with latest Node.js LTS
+  - Claude Code CLI (Anthropic)
+  - OpenAI CLI (Codex)
+  - ⚠️ Interactive installations are skipped in headless mode with manual installation instructions
 - **Gaming**: Steam, ckb-next (Corsair keyboards), Piper (gaming mice)
 - **Communication**: Discord, Signal, Spotify
 - **Utilities**: 1Password, RustDesk, LocalSend, Flatseal
@@ -128,7 +151,19 @@ sudo reboot
 **Purpose**: Unattended Ubuntu installation configuration
 - **Disk Layout**: 500MB boot, 30GB root, 16GB swap
 - **User Setup**: Creates user `jason` with hashed password
+- **SSH Server**: Automatically installs and enables OpenSSH server
+- **Basic Packages**: Installs essential packages (curl, wget, git, vim, build-essential)
 - **Post-Install**: Downloads and runs setup scripts automatically
+
+#### `firefox_extensions_helper.sh` 🦊
+**Purpose**: Assists with Firefox extension installation
+- **Extensions Included**:
+  - UBlock Origin (ad blocker)
+  - OneTab (tab management)
+  - Quick Tabs Ported (tab switcher)
+  - 1Password (password manager)
+- **Note**: Firefox extensions cannot be automatically installed due to browser security
+- **Function**: Opens all extension pages in Firefox for one-click manual installation
 
 ## ⚠️ Dangerous Operations & Warnings
 

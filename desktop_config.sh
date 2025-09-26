@@ -18,14 +18,13 @@ configure_desktop() {
   
   # Set pinned apps in specific order
   gsettings set org.gnome.shell favorite-apps "[
-    'firefox.desktop', 
-    'google-chrome.desktop', 
-    'kitty.desktop', 
-    'gnome-system-monitor.desktop', 
-    'com.discordapp.Discord.desktop', 
-    'com.spotify.Client.desktop', 
-    'cursor.desktop', 
-    'code.desktop', 
+    'firefox.desktop',
+    'google-chrome.desktop',
+    'kitty.desktop',
+    'gnome-system-monitor.desktop',
+    'com.discordapp.Discord.desktop',
+    'com.spotify.Client.desktop',
+    'code.desktop',
     'com.valvesoftware.Steam.desktop'
   ]"
   
@@ -68,14 +67,13 @@ gsettings set org.gnome.shell.extensions.dash-to-dock autohide true
 gsettings set org.gnome.shell.extensions.dash-to-dock intellihide true
 gsettings set org.gnome.shell favorite-apps "[]"
 gsettings set org.gnome.shell favorite-apps "[
-  'firefox.desktop', 
-  'google-chrome.desktop', 
-  'kitty.desktop', 
-  'gnome-system-monitor.desktop', 
-  'com.discordapp.Discord.desktop', 
-  'com.spotify.Client.desktop', 
-  'cursor.desktop', 
-  'code.desktop', 
+  'firefox.desktop',
+  'google-chrome.desktop',
+  'kitty.desktop',
+  'gnome-system-monitor.desktop',
+  'com.discordapp.Discord.desktop',
+  'com.spotify.Client.desktop',
+  'code.desktop',
   'com.valvesoftware.Steam.desktop'
 ]"
 EOF
