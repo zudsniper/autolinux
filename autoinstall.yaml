@@ -4,7 +4,22 @@ autoinstall:
   locale: en_US.UTF-8
   keyboard:
     layout: us
-  
+
+  # Package configuration
+  packages:
+    - openssh-server
+    - curl
+    - wget
+    - git
+    - vim
+    - build-essential
+
+  # SSH configuration
+  ssh:
+    install-server: true
+    allow-pw: true
+    authorized-keys: []
+
   storage:
     layout:
       name: direct
@@ -51,13 +66,18 @@ autoinstall:
         id: swap-mount
         device: swap-format
         path: none
-  
+
   identity:
     hostname: ubuntu
     username: jason
     # Generate with: mkpasswd --method=SHA-512
     password: $6$examplehashedpassword
-  
+
+  # Late commands to ensure SSH is enabled
+  late-commands:
+    - curtin in-target --target=/target -- systemctl enable ssh
+    - curtin in-target --target=/target -- systemctl start ssh
+
   user-data:
     runcmd:
       - "curl -s https://your-server.com/scripts/setup.sh | bash"

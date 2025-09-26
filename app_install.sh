@@ -319,11 +319,52 @@ else
 fi
 
 # nvm
+REAL_USER=$(logname 2>/dev/null || echo ${SUDO_USER:-${USER}})
+REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+
 if [ ! -d "/root/.nvm" ] && [ ! -d "/home/jason/.nvm" ]; then
     echo "Installing nvm..."
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+    if [ "$REAL_USER" != "root" ] && [ -n "$REAL_USER" ]; then
+        # Install for the real user
+        sudo -u "$REAL_USER" bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
+        track_success "nvm"
+    else
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+        track_success "nvm"
+    fi
 else
     echo "nvm already installed, skipping."
+    track_skipped "nvm"
+fi
+
+# Node.js LTS via nvm
+NVM_DIR="${REAL_HOME}/.nvm"
+if [ -d "$NVM_DIR" ]; then
+    # Check if Node.js is already installed via nvm
+    if [ "$REAL_USER" != "root" ] && [ -n "$REAL_USER" ]; then
+        NODE_INSTALLED=$(sudo -u "$REAL_USER" bash -c ". $NVM_DIR/nvm.sh && nvm ls --no-colors 2>/dev/null | grep -c 'v[0-9]'" || echo "0")
+    else
+        . "$NVM_DIR/nvm.sh"
+        NODE_INSTALLED=$(nvm ls --no-colors 2>/dev/null | grep -c 'v[0-9]' || echo "0")
+    fi
+
+    if [ "$NODE_INSTALLED" -eq 0 ]; then
+        echo "Installing Node.js LTS via nvm..."
+        if [ "$REAL_USER" != "root" ] && [ -n "$REAL_USER" ]; then
+            sudo -u "$REAL_USER" bash -c ". $NVM_DIR/nvm.sh && nvm install --lts && nvm use --lts"
+            track_success "Node.js LTS"
+        else
+            . "$NVM_DIR/nvm.sh"
+            nvm install --lts
+            nvm use --lts
+            track_success "Node.js LTS"
+        fi
+    else
+        echo "Node.js already installed via nvm, skipping."
+        track_skipped "Node.js LTS"
+    fi
+else
+    echo "⚠️  nvm not found, skipping Node.js installation."
 fi
 
 # GitHub CLI
@@ -364,17 +405,6 @@ else
     track_skipped "VS Code"
 fi
 
-# Cursor - DISABLED: Broken installation script
-# if ! command -v cursor &> /dev/null; then
-#     echo "Installing Cursor..."
-#     if curl -fsSL https://gist.githubusercontent.com/tatosjb/0ca8551406499d52d449936964e9c1d6/raw/5d6ad7ede60611dafa30ad29a4b8caabb671db5b/install-cursor-sh | bash 2>/dev/null; then
-#         track_success "Cursor"
-#     else
-#         track_failure "Cursor" "Installation script failed"
-#     fi
-# else
-#     track_skipped "Cursor"
-# fi
 
 # Docker
 if ! command -v docker &> /dev/null; then
@@ -745,6 +775,109 @@ if ! is_package_installed "claude-desktop"; then
     fi
 else
     track_skipped "Claude Desktop"
+fi
+
+# Detect if we're in a headless environment
+HEADLESS=false
+if [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; then
+    HEADLESS=true
+fi
+
+# Interactive CLI tools installation (Claude Code & OpenAI CLI)
+# These require interactive prompts, so we handle them specially
+if [ "$HEADLESS" = true ]; then
+    echo ""
+    echo "=============================================="
+    echo "  ⚠️  INTERACTIVE INSTALLATIONS SKIPPED"
+    echo "=============================================="
+    echo "The following tools require interactive setup and have been skipped in headless mode:"
+    echo ""
+    echo "  1. Claude Code CLI (from Anthropic)"
+    echo "     Install manually with: npm install -g @anthropic-ai/claude-code"
+    echo ""
+    echo "  2. OpenAI CLI (Codex)"
+    echo "     Install manually with: npm install -g openai"
+    echo ""
+    echo "Please install these tools manually after you have a display/terminal session."
+    echo "=============================================="
+    echo ""
+    track_skipped "Claude Code CLI (headless)"
+    track_skipped "OpenAI CLI (headless)"
+else
+    # Check if npm/node is available
+    NVM_DIR="${REAL_HOME}/.nvm"
+    if [ -d "$NVM_DIR" ]; then
+        if [ "$REAL_USER" != "root" ] && [ -n "$REAL_USER" ]; then
+            # Load nvm and check for npm
+            NPM_AVAILABLE=$(sudo -u "$REAL_USER" bash -c ". $NVM_DIR/nvm.sh && command -v npm >/dev/null 2>&1 && echo 'yes' || echo 'no'")
+        else
+            . "$NVM_DIR/nvm.sh"
+            NPM_AVAILABLE=$(command -v npm >/dev/null 2>&1 && echo 'yes' || echo 'no')
+        fi
+
+        if [ "$NPM_AVAILABLE" = "yes" ]; then
+            echo ""
+            echo "=============================================="
+            echo "  Installing Interactive CLI Tools"
+            echo "=============================================="
+            echo "The following tools may require interactive prompts during installation."
+            echo ""
+
+            # Claude Code CLI
+            echo "Installing Claude Code CLI..."
+            if [ "$REAL_USER" != "root" ] && [ -n "$REAL_USER" ]; then
+                if sudo -u "$REAL_USER" bash -c ". $NVM_DIR/nvm.sh && npm install -g @anthropic-ai/claude-code" 2>/dev/null; then
+                    track_success "Claude Code CLI"
+                else
+                    echo "⚠️  Claude Code CLI installation failed or was cancelled."
+                    echo "    You can install it manually with: npm install -g @anthropic-ai/claude-code"
+                    track_failure "Claude Code CLI" "npm installation failed or cancelled"
+                fi
+            else
+                . "$NVM_DIR/nvm.sh"
+                if npm install -g @anthropic-ai/claude-code 2>/dev/null; then
+                    track_success "Claude Code CLI"
+                else
+                    echo "⚠️  Claude Code CLI installation failed or was cancelled."
+                    echo "    You can install it manually with: npm install -g @anthropic-ai/claude-code"
+                    track_failure "Claude Code CLI" "npm installation failed or cancelled"
+                fi
+            fi
+
+            # OpenAI CLI
+            echo "Installing OpenAI CLI..."
+            if [ "$REAL_USER" != "root" ] && [ -n "$REAL_USER" ]; then
+                if sudo -u "$REAL_USER" bash -c ". $NVM_DIR/nvm.sh && npm install -g openai" 2>/dev/null; then
+                    track_success "OpenAI CLI"
+                else
+                    echo "⚠️  OpenAI CLI installation failed or was cancelled."
+                    echo "    You can install it manually with: npm install -g openai"
+                    track_failure "OpenAI CLI" "npm installation failed or cancelled"
+                fi
+            else
+                . "$NVM_DIR/nvm.sh"
+                if npm install -g openai 2>/dev/null; then
+                    track_success "OpenAI CLI"
+                else
+                    echo "⚠️  OpenAI CLI installation failed or was cancelled."
+                    echo "    You can install it manually with: npm install -g openai"
+                    track_failure "OpenAI CLI" "npm installation failed or cancelled"
+                fi
+            fi
+
+            echo "=============================================="
+            echo ""
+        else
+            echo "⚠️  npm not found. Skipping CLI tools installation."
+            echo "    Install Node.js first, then run:"
+            echo "      npm install -g @anthropic-ai/claude-code"
+            echo "      npm install -g openai"
+            track_skipped "CLI Tools (npm not available)"
+        fi
+    else
+        echo "⚠️  nvm not found. Skipping CLI tools installation."
+        track_skipped "CLI Tools (nvm not available)"
+    fi
 fi
 
 echo "Application installation completed"
