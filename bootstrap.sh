@@ -32,6 +32,7 @@ STAGES=(
     "00:preflight"
     "01:timeshift-snapshot"
     "02:hold-critical-packages"
+    "02a:gpu-driver-check"
     "03:detect-starting-de"
     "04:install-gnome-stack"
     "05:switch-display-manager"

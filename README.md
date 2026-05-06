@@ -28,6 +28,7 @@ sudo ./bootstrap.sh --allow-pending-upgrades     # bypass the 'no pending upgrad
 | 00 | preflight (Ubuntu? dpkg sane? no pending upgrades? network?) | no |
 | 01 | timeshift snapshot tagged `autolinux-pre-migration` | no |
 | 02 | `apt-mark hold` for ubuntu-desktop, gdm3, gnome-shell, kernel, GRUB, shim | no |
+| 02a | GPU driver check — detect vendor + bound kernel module, recommend/install vendor driver (NVIDIA proprietary on Ampere/Lovelace, mesa/vulkan on AMD/Intel) | only if NVIDIA installed |
 | 03 | record starting DE / DM / session type in state.json | no |
 | 04 | install GNOME stack (`ubuntu-desktop gdm3 gnome-shell gnome-session ...`) | no |
 | 05 | switch default display manager to gdm3 (debconf-preseeded) | no |
@@ -53,6 +54,7 @@ Stages individually detect "already satisfied" by inspecting the live system, **
 - **Pre-migration timeshift snapshot.** rsync mode (works on ext4). Tagged so we can find/remove ours.
 - **Atomic state writes** with `mv tmp final` and a JSON-validation gate before publish.
 - **`--dry-run`** prints every `apt`/`mv`/`dpkg` invocation without touching the system.
+- **GPU driver auto-recommendation** (stage 02a). If an NVIDIA Maxwell+ card is bound to `nouveau`, bootstrap prompts to install the `ubuntu-drivers`-recommended `nvidia-driver-*` package (with apt simulation preview) and queues a reboot. AMD/Intel cards get their userspace mesa/vulkan/VA bits checked. Pre-Maxwell NVIDIA cards on `nouveau` are left alone.
 
 ### Resume across reboot
 

@@ -79,6 +79,17 @@ s00_execute() {
         fail=1
     fi
 
+    # Heads-up only — actual remediation lives in stage 02a (gpu-driver-check).
+    if command -v lspci >/dev/null 2>&1; then
+        if lspci -nnk 2>/dev/null | awk '
+            /VGA|3D controller|Display controller/ { is_gpu=1; product=$0; next }
+            is_gpu && /Kernel driver in use:/      { driver=$0; print product"\n"driver; is_gpu=0 }
+        ' | grep -q 'NVIDIA' && \
+           lspci -nnk 2>/dev/null | grep -A2 'NVIDIA' | grep -q 'Kernel driver in use: nouveau'; then
+            log_warning "NVIDIA GPU is currently bound to nouveau — stage 02a will offer to install the proprietary driver."
+        fi
+    fi
+
     if [ -e "$AUTOLINUX_STATE_DIR/.lock" ]; then
         local pid
         pid="$(cat "$AUTOLINUX_STATE_DIR/.lock" 2>/dev/null || echo "")"

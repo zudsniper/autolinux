@@ -138,6 +138,21 @@ out="$("$REPO_DIR/bootstrap.sh" --list-stages 2>/dev/null)"
 _assert_true "list-stages mentions 00-preflight" grep -q "00-preflight" <<<"$out"
 _assert_true "list-stages mentions 15-done"      grep -q "15-done"      <<<"$out"
 _assert_true "list-stages mentions 06-arm-resume-and-reboot" grep -q "06-arm-resume-and-reboot" <<<"$out"
+_assert_true "list-stages mentions 02a-gpu-driver-check"     grep -q "02a-gpu-driver-check"     <<<"$out"
+
+# 02a sits between 02 and 03 in the ordered output.
+_assert "02a sits between 02 and 03"   "$(printf '%s\n' "$out" | grep -nE '02-hold-critical-packages|02a-gpu-driver-check|03-detect-starting-de' | awk -F: 'NR==1{a=$1}NR==2{b=$1}NR==3{c=$1} END {print (a<b && b<c) ? "ok" : "bad"}')" "ok"
+
+echo
+echo "==> stage 02a: file is sourceable + defines all four hooks"
+( source "$REPO_DIR/lib/log.sh" && \
+  source "$REPO_DIR/lib/state.sh" && \
+  source "$REPO_DIR/lib/detect.sh" && \
+  source "$REPO_DIR/lib/safety.sh" && \
+  source "$REPO_DIR/stages/02a-gpu-driver-check.sh" && \
+  declare -F s02a_detect s02a_precheck s02a_execute s02a_verify >/dev/null
+) >/dev/null 2>&1
+_assert "02a stage defines detect/precheck/execute/verify" "$?" "0"
 
 echo
 echo "==> bootstrap.sh: --help works without root"
