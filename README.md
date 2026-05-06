@@ -1,6 +1,78 @@
-# Ubuntu 24.10 Auto-Configuration Scripts
+# Ubuntu Auto-Configuration Scripts
 
-A complete automation suite for setting up Ubuntu 24.10 with a custom desktop environment, applications, and system configurations. This project automates the entire process from OS installation to fully configured desktop environment.
+A complete automation suite for setting up Ubuntu (24.10 / 25.10) with a custom desktop environment, applications, and system configurations. Includes a safe Xubuntu→GNOME migration flow that survives reboots.
+
+## Recommended: `bootstrap.sh`
+
+> **⚠️ UNTESTED ON REAL HARDWARE — 2026-05-06.** The state machine, stage logic, and lib/ helpers have only been exercised via `--dry-run` on a machine that is already on GNOME (cleanup-only path) and via the `tests/state-machine.sh` unit suite. The full Xubuntu→GNOME migration flow (stages 04–07: install GNOME stack, switch DM, reboot, verify) has **not been validated on a live Xubuntu install**. Test in a VM before running on a machine you care about. Use `--dry-run` first.
+
+`bootstrap.sh` is a state-machine orchestrator that runs the migration and setup as 16 ordered stages with checkpoints in `/var/lib/autolinux/state.json`. Stages that need a reboot exit cleanly after arming a resume hook (autostart `.desktop` + systemd unit) so the next login picks up exactly where it left off.
+
+```bash
+sudo ./bootstrap.sh                  # auto-detect + run pending stages
+sudo ./bootstrap.sh --status         # show state machine + per-stage status
+sudo ./bootstrap.sh --dry-run        # show what would happen, change nothing
+sudo ./bootstrap.sh --list-stages    # print the stage list
+sudo ./bootstrap.sh --rollback       # release holds, remove resume hooks, list snapshots
+sudo ./bootstrap.sh --only 08-remove-xfce        # run one stage
+sudo ./bootstrap.sh --from 10-system-config      # start at a stage; earlier stages must already be done
+sudo ./bootstrap.sh --force-replay 03-detect-starting-de   # re-run a 'done' stage
+sudo ./bootstrap.sh --yes            # accept all confirmation prompts
+sudo ./bootstrap.sh --allow-pending-upgrades     # bypass the 'no pending upgrades' guard
+```
+
+### What the stages do
+
+| # | Stage | Reboots? |
+|---|---|---|
+| 00 | preflight (Ubuntu? dpkg sane? no pending upgrades? network?) | no |
+| 01 | timeshift snapshot tagged `autolinux-pre-migration` | no |
+| 02 | `apt-mark hold` for ubuntu-desktop, gdm3, gnome-shell, kernel, GRUB, shim | no |
+| 03 | record starting DE / DM / session type in state.json | no |
+| 04 | install GNOME stack (`ubuntu-desktop gdm3 gnome-shell gnome-session ...`) | no |
+| 05 | switch default display manager to gdm3 (debconf-preseeded) | no |
+| 06 | arm resume hook + reboot, **only if** the running DE is not GNOME | **yes** |
+| 07 | post-reboot: confirm GNOME session is active and GDM3 is default | no |
+| 08 | safely purge xfce4-/xubuntu-/libxfce4*/lightdm packages (computed live, ubuntu-desktop deps excluded) | no |
+| 09 | archive `~/.config/xfce4/` to `~/.config/autolinux-backup/xfce4-<ts>/` | no |
+| 10 | run `system_config.sh` (swap, network, SSH, X11, NOPASSWD sudo) | no |
+| 11 | run `app_install.sh` (Chrome, 1Password, Discord, Steam, Rust, ringboard, …) | no |
+| 12 | run `desktop_config.sh` (GNOME theme, dock, favorite apps) | no |
+| 13 | run `gnome_extensions.sh` (Tiling Shell, Hide Top Bar) | no |
+| 14 | release the package holds added in stage 02 | no |
+| 15 | remove resume hooks, optional snapshot deletion, summary | no |
+
+Stages individually detect "already satisfied" by inspecting the live system, **independent of state.json**. So if you run bootstrap on a box where someone manually installed GNOME, it will skip stages 02–07 and pick up at the cleanup steps. State drift (a "done" stage that no longer detects) aborts with a `--force-replay` hint instead of silently re-running.
+
+### Safety mechanisms
+
+- **Never purge XFCE while inside an XFCE session.** Stage 08 hard-aborts.
+- **Hold before purge.** ubuntu-desktop, gdm3, gnome-shell, linux-generic, GRUB, shim are all held during stages 02–13 so `apt autoremove` cannot cascade them out.
+- **Computed purge set, not a static kill list.** Stage 08 subtracts deps of ubuntu-desktop / ubuntu-desktop-minimal / gnome-shell from the xfce-pattern match.
+- **Bootloader integrity check before every reboot.** Two kernels in `/boot`, ≥200MB free on `/boot/efi`, valid efibootmgr entry.
+- **Pre-migration timeshift snapshot.** rsync mode (works on ext4). Tagged so we can find/remove ours.
+- **Atomic state writes** with `mv tmp final` and a JSON-validation gate before publish.
+- **`--dry-run`** prints every `apt`/`mv`/`dpkg` invocation without touching the system.
+
+### Resume across reboot
+
+Stage 06 installs two layers of resume hook before rebooting:
+1. `~/.config/autostart/autolinux-resume.desktop` (primary; matches the existing repo's autostart pattern)
+2. `/etc/systemd/system/autolinux-resume.service` (fallback if user disabled autostart globally)
+
+Both invoke `/usr/local/bin/autolinux-resume`, which opens a terminal (kitty / gnome-terminal / xterm in that order) and runs `sudo -E ./bootstrap.sh --resume`. The wrapper self-removes when state.status is `done`. Stage 15 also removes the hooks explicitly.
+
+### Tests
+
+```bash
+./tests/state-machine.sh
+```
+
+Exercises state.sh atomic writes, malformed-JSON recovery, stage transitions, array dedupe/replace, detect.sh helpers, and bootstrap.sh CLI flags.
+
+---
+
+## Project Overview
 
 ## 🎯 Project Overview
 
@@ -39,9 +111,11 @@ If using the autoinstall method:
 2. Update `autoinstall.yaml` with your password hash
 3. Host the setup scripts on a web server or modify the `runcmd` section
 
-## 🚀 Installation Order
+## 🚀 Installation Order (Advanced / Manual Mode)
 
-**⚠️ CRITICAL: Run scripts in this exact order to avoid dependency issues**
+**⚠️ Most users should use `sudo ./bootstrap.sh` instead — see the top of this README.**
+
+The instructions below are for running individual scripts directly, without the state-machine wrapper. There is no resume-across-reboot, no preflight check, and no timeshift snapshot — you are responsible for those yourself.
 
 ### For Fresh Desktop Installation:
 

@@ -68,25 +68,30 @@ gsettings set org.gnome.shell.extensions.dash-to-dock autohide true
 gsettings set org.gnome.shell.extensions.dash-to-dock intellihide true
 gsettings set org.gnome.shell favorite-apps "[]"
 gsettings set org.gnome.shell favorite-apps "[
-  'firefox.desktop', 
-  'google-chrome.desktop', 
-  'kitty.desktop', 
-  'gnome-system-monitor.desktop', 
-  'com.discordapp.Discord.desktop', 
-  'com.spotify.Client.desktop', 
-  'cursor.desktop', 
-  'code.desktop', 
+  'firefox.desktop',
+  'google-chrome.desktop',
+  'kitty.desktop',
+  'gnome-system-monitor.desktop',
+  'com.discordapp.Discord.desktop',
+  'com.spotify.Client.desktop',
+  'cursor.desktop',
+  'code.desktop',
   'com.valvesoftware.Steam.desktop'
 ]"
+
+# Remove this autostart entry so it doesn't fire again next login.
+rm -f "$HOME/.config/autostart/first-login-setup.desktop"
 EOF
 
 # Make it executable and set ownership
 chmod +x /home/jason/setup_desktop.sh
 chown jason:jason /home/jason/setup_desktop.sh
 
-# Create autostart entry to run on first login
+# Create autostart entry to run on first login (skip if identical entry already there)
 mkdir -p /home/jason/.config/autostart
-cat > /home/jason/.config/autostart/first-login-setup.desktop << EOF
+AUTOSTART_FILE=/home/jason/.config/autostart/first-login-setup.desktop
+if [ ! -f "$AUTOSTART_FILE" ] || ! grep -q '^Exec=/home/jason/setup_desktop.sh$' "$AUTOSTART_FILE" 2>/dev/null; then
+cat > "$AUTOSTART_FILE" << EOF
 [Desktop Entry]
 Type=Application
 Name=First Login Setup
@@ -97,6 +102,7 @@ X-GNOME-Autostart-enabled=true
 Terminal=false
 Comment=Setup desktop environment on first login
 EOF
+fi
 
 chown -R jason:jason /home/jason/.config/autostart
 
