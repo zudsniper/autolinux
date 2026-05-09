@@ -116,7 +116,7 @@ else
   su - "$REAL_USER" -c "cd $TEMP_DIR && \
     git clone https://github.com/domferr/tilingshell.git && \
     cd tilingshell && \
-    npm i && \
+    npm i --legacy-peer-deps && \
     npm run build && \
     npm run install:extension" || handle_error "Failed to install Tiling Shell"
   log_success "Tiling Shell installed successfully."
