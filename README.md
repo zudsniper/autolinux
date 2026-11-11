@@ -2,6 +2,23 @@
 
 A complete automation suite for setting up Ubuntu (24.10 / 25.10) with a custom desktop environment, applications, and system configurations. Includes a safe Xubuntu→GNOME migration flow that survives reboots.
 
+## Kitty config only
+
+Just want the kitty terminal config? One line, no clone:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zudsniper/autolinux/master/kitty/install.sh | bash
+```
+
+What you get ([`kitty/kitty.conf`](kitty/kitty.conf)):
+- **No GNOME titlebar.** The OS titlebar is hidden (resize shadows stay). Move windows with **Super+drag**.
+- **VSCode-style title strip** above every split, lone windows included. The active split gets a blue `●` and bold title.
+- **Tab bar** that only shows once a second tab exists.
+- **Splits layout**: `F5` hsplit, `F6` vsplit, `F7` rotate, `Shift+arrows` move a split, `Ctrl+Shift+[`/`]` cycle splits, `Ctrl+Alt+T` rename a split, `Ctrl+Shift+Alt+T` rename a tab.
+- Fixed 1500×900 starting window size.
+
+The installer backs up any existing `~/.config/kitty/kitty.conf` to `kitty.conf.bak-<timestamp>`, then live-reloads running kitty windows. It needs **kitty ≥ 0.46** for the title strips, and it warns you if yours is older. Distro packages often are, so use the [official installer](https://sw.kovidgoyal.net/kitty/binary/). `app_install.sh` applies this config automatically after installing kitty.
+
 ## Recommended: `bootstrap.sh`
 
 > **⚠️ UNTESTED ON REAL HARDWARE — 2026-05-06.** The state machine, stage logic, and lib/ helpers have only been exercised via `--dry-run` on a machine that is already on GNOME (cleanup-only path) and via the `tests/state-machine.sh` unit suite. The full Xubuntu→GNOME migration flow (stages 04–07: install GNOME stack, switch DM, reboot, verify) has **not been validated on a live Xubuntu install**. Test in a VM before running on a machine you care about. Use `--dry-run` first.
