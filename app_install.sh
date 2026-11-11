@@ -727,6 +727,14 @@ else
     echo "Kitty terminal already installed, skipping."
 fi
 
+# Kitty config (custom per-split title bars; see "Kitty config" in README.md)
+KITTY_CONF_INSTALLER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/kitty/install.sh"
+KITTY_USER=$(logname 2>/dev/null || echo ${SUDO_USER:-${USER}})
+if [ -f "$KITTY_CONF_INSTALLER" ] && [ -n "$KITTY_USER" ] && [ "$KITTY_USER" != "root" ]; then
+    echo "Applying kitty config for user: $KITTY_USER"
+    sudo -u "$KITTY_USER" -H bash "$KITTY_CONF_INSTALLER" || echo "Kitty config install failed (non-fatal)."
+fi
+
 # Claude Desktop
 if ! is_package_installed "claude-desktop"; then
     echo "Installing Claude Desktop..."
