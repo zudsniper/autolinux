@@ -160,7 +160,7 @@ Nothing here forces Xorg anymore. If an older autolinux run left `WaylandEnable=
 
 ## Warnings
 
-- `system_config.sh --yes` configures **Wake-on-LAN and a static IP of 192.168.1.69 / gateway 192.168.1.1**. Without `--yes` it asks first. Restore with `/etc/netplan/01-netcfg.yaml.backup`.
+- `system_config.sh --yes` enables **Wake-on-LAN** (wired NICs only) and a **static IP derived from the router's subnet**: it reads the default route (e.g. `192.168.50.1/24`) and picks host `.69` in that subnet, falling back to the current DHCP lease if `.69` is taken. On desktops it's applied to the active NetworkManager connection (old settings saved under `/var/backups/autolinux-nm-*`, undo command printed); without NetworkManager it writes `/etc/netplan/60-autolinux-static.yaml`. Override with `sudo AUTOLINUX_STATIC_IP=no|<addr> AUTOLINUX_STATIC_HOST=<n> AUTOLINUX_DNS="…" ./system_config.sh`. Reserve the address in the router's DHCP settings.
 - It also gives the invoking user **passwordless sudo** (`/etc/sudoers.d/<user>`).
 - `relink_home.sh` moves `/home` to `/home.bak` when re-attaching an existing home partition.
 - A broken desktop after extension changes: `gsettings set org.gnome.shell disable-user-extensions true` (or `./reset_gnome_extensions.sh`).
@@ -176,6 +176,7 @@ Nothing here forces Xorg anymore. If an older autolinux run left `WaylandEnable=
 
 ```bash
 ./tests/modules.sh         # module contracts, selection, dry-run safety, stage filters, CLI
+./tests/net.sh             # static-IP derivation from the router subnet
 ./tests/state-machine.sh   # state.json, detect helpers, bootstrap CLI
 ```
 

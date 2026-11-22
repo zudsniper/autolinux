@@ -3,6 +3,10 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/net.sh
+source "$SCRIPT_DIR/lib/net.sh"
+
 # Parse command line arguments
 YES_TO_ALL=false
 while [[ $# -gt 0 ]]; do
@@ -84,34 +88,34 @@ else
 fi
 
 
-# Network configuration
+# Network configuration: Wake-on-LAN (wired only) and an optional static
+# address. The address is derived from the subnet the router actually serves
+# (detected from the default route), never a hardcoded 192.168.1.x.
+#
+#   AUTOLINUX_STATIC_IP    auto (default) | no | <address>
+#   AUTOLINUX_STATIC_HOST  host number used by "auto" (default 69 → x.y.z.69 on a /24)
+#   AUTOLINUX_DNS          space-separated DNS servers (default "1.1.1.1 1.0.0.1")
 function configure_networking() {
-    echo "\n=== Network Configuration ==="
-    echo "This will configure Wake-on-LAN and static IP settings."
-    
-    if [ "$YES_TO_ALL" = true ]; then
-        CONFIGURE_NET="y"
-    else
-        read -p "Do you want to configure networking (Wake-on-LAN + static IP)? [y/N]: " CONFIGURE_NET
+    echo
+    echo "=== Network Configuration ==="
+
+    local route IFACE GATEWAY CUR_ADDR PREFIX
+    if ! route="$(net_default_route)"; then
+        echo "❌ No IPv4 default route; skipping network configuration."
+        return 0
     fi
-    
-    if [[ "$CONFIGURE_NET" =~ ^[Yy]$ ]]; then
-        # Get network interface
-        IFACE=$(ip -o -4 route show to default | awk '{print $5}' | head -1)
-        
-        if [ -z "$IFACE" ]; then
-            echo "❌ Could not detect network interface. Skipping network configuration."
-            return
-        fi
-        
-        echo "Detected network interface: $IFACE"
-        
-        # Configure WakeOnLAN
-        echo "Configuring Wake-on-LAN..."
-        ethtool -s ${IFACE} wol g
-        
-        # Create persistent WakeOnLAN config
-        cat > /etc/systemd/system/wol.service << EOF
+    read -r IFACE GATEWAY CUR_ADDR PREFIX <<<"$route"
+    echo "Default route: $IFACE via $GATEWAY (this machine: $CUR_ADDR/$PREFIX)"
+
+    if [ "$YES_TO_ALL" != true ]; then
+        read -r -p "Configure networking (Wake-on-LAN + static IP)? [y/N]: " CONFIGURE_NET
+        [[ "${CONFIGURE_NET:-}" =~ ^[Yy]$ ]] || { echo "Skipping network configuration."; return 0; }
+    fi
+
+    # Wake-on-LAN only makes sense (and ethtool only succeeds) on wired NICs.
+    if [ -e "/sys/class/net/$IFACE/device" ] && [ ! -d "/sys/class/net/$IFACE/wireless" ]; then
+        if ethtool -s "$IFACE" wol g 2>/dev/null; then
+            cat > /etc/systemd/system/wol.service <<UNIT
 [Unit]
 Description=Configure Wake-on-LAN
 After=network.target
@@ -122,51 +126,88 @@ ExecStart=/usr/sbin/ethtool -s ${IFACE} wol g
 
 [Install]
 WantedBy=multi-user.target
-EOF
-        systemctl enable wol.service
-        echo "✅ Wake-on-LAN configured."
-        
-        # Static IP configuration
-        if [ "$YES_TO_ALL" = true ]; then
-            CONFIGURE_STATIC="y"
-            STATIC_IP="192.168.1.69"
-            GATEWAY="192.168.1.1"
+UNIT
+            systemctl enable wol.service
+            echo "✅ Wake-on-LAN enabled on $IFACE."
         else
-            read -p "Do you want to configure a static IP? [y/N]: " CONFIGURE_STATIC
-            if [[ "$CONFIGURE_STATIC" =~ ^[Yy]$ ]]; then
-                read -p "Enter static IP address [192.168.1.69]: " STATIC_IP
-                STATIC_IP=${STATIC_IP:-192.168.1.69}
-                read -p "Enter gateway IP [192.168.1.1]: " GATEWAY
-                GATEWAY=${GATEWAY:-192.168.1.1}
-            fi
+            echo "⚠️  $IFACE does not support Wake-on-LAN; skipped."
         fi
-        
-        if [[ "$CONFIGURE_STATIC" =~ ^[Yy]$ ]]; then
-            echo "Configuring static IP: $STATIC_IP"
-            
-            # Set static IP with Cloudflare DNS
-            cat > /etc/netplan/01-netcfg.yaml << EOF
+    else
+        echo "ℹ️  $IFACE is not a wired NIC; Wake-on-LAN skipped."
+    fi
+
+    # Pick the static address.
+    local mode="${AUTOLINUX_STATIC_IP:-auto}" host="${AUTOLINUX_STATIC_HOST:-69}"
+    local dns="${AUTOLINUX_DNS:-1.1.1.1 1.0.0.1}" STATIC_IP="" suggested gw_in
+    [ "$mode" = "no" ] && { echo "Keeping DHCP (AUTOLINUX_STATIC_IP=no)."; return 0; }
+
+    if suggested="$(net_host_in_subnet "$CUR_ADDR" "$PREFIX" "$host")"; then
+        if [ "$suggested" != "$CUR_ADDR" ] && net_addr_in_use "$suggested" "$IFACE"; then
+            echo "⚠️  $suggested is already in use on this network; suggesting the current lease instead."
+            suggested="$CUR_ADDR"
+        fi
+    else
+        suggested="$CUR_ADDR"
+    fi
+    [ "$mode" != "auto" ] && suggested="$mode"
+
+    if [ "$YES_TO_ALL" = true ]; then
+        STATIC_IP="$suggested"
+    else
+        read -r -p "Set a static IP? [y/N]: " CONFIGURE_STATIC
+        [[ "${CONFIGURE_STATIC:-}" =~ ^[Yy]$ ]] || { echo "Keeping DHCP."; return 0; }
+        read -r -p "Static IP [$suggested]: " STATIC_IP
+        STATIC_IP="${STATIC_IP:-$suggested}"
+        read -r -p "Gateway [$GATEWAY]: " gw_in
+        GATEWAY="${gw_in:-$GATEWAY}"
+    fi
+
+    if ! [[ "$STATIC_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] \
+        || [ "$(net_host_in_subnet "$STATIC_IP" "$PREFIX" 1)" != "$(net_host_in_subnet "$GATEWAY" "$PREFIX" 1)" ]; then
+        echo "❌ $STATIC_IP is not in the gateway's subnet ($GATEWAY/$PREFIX); keeping DHCP."
+        return 0
+    fi
+
+    echo "Static IP: $STATIC_IP/$PREFIX via $GATEWAY, DNS $dns"
+    echo "   Tip: reserve $STATIC_IP for this machine in the router's DHCP settings so it never hands it out."
+
+    local con
+    if systemctl is-active --quiet NetworkManager && con="$(net_nm_connection "$IFACE")" && [ -n "$con" ]; then
+        # Desktop: keep NetworkManager in charge so GNOME Settings stays accurate.
+        local backup
+        backup="/var/backups/autolinux-nm-$(echo "$con" | tr -c 'A-Za-z0-9_-' _)-$(date +%Y%m%d-%H%M%S).txt"
+        nmcli -f ipv4 connection show "$con" > "$backup" 2>/dev/null || true
+        nmcli connection modify "$con" \
+            ipv4.method manual \
+            ipv4.addresses "$STATIC_IP/$PREFIX" \
+            ipv4.gateway "$GATEWAY" \
+            ipv4.dns "$dns" \
+            ipv4.ignore-auto-dns yes
+        nmcli connection up "$con" >/dev/null
+        echo "✅ Static IP set on NetworkManager connection '$con' (previous ipv4 settings: $backup)."
+        echo "   Undo: nmcli con mod '$con' ipv4.method auto ipv4.addresses '' ipv4.gateway '' ipv4.dns '' ipv4.ignore-auto-dns no && nmcli con up '$con'"
+    else
+        # Server / no NetworkManager: netplan with networkd.
+        local np=/etc/netplan/60-autolinux-static.yaml dns_list
+        dns_list="${dns// /, }"
+        [ -f "$np" ] && cp -a "$np" "$np.backup.$(date +%Y%m%d-%H%M%S)"
+        cat > "$np" <<YAML
 network:
   version: 2
-  renderer: networkd
   ethernets:
     ${IFACE}:
-      dhcp4: no
+      dhcp4: false
       addresses:
-        - ${STATIC_IP}/24
+        - ${STATIC_IP}/${PREFIX}
       routes:
         - to: default
           via: ${GATEWAY}
       nameservers:
-        addresses: [1.1.1.1, 1.0.0.1]
-EOF
-            netplan apply
-            echo "✅ Static IP configured: $STATIC_IP"
-        else
-            echo "Keeping DHCP configuration."
-        fi
-    else
-        echo "Skipping network configuration."
+        addresses: [${dns_list}]
+YAML
+        chmod 600 "$np"
+        netplan apply
+        echo "✅ Static IP written to $np (delete it and run 'netplan apply' to undo)."
     fi
 }
 
