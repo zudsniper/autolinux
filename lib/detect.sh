@@ -27,7 +27,7 @@ is_package_installed() {
     dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q '^install ok installed$'
 }
 is_flatpak_installed() {
-    command -v flatpak >/dev/null 2>&1 && flatpak list --app 2>/dev/null | awk '{print $2}' | grep -qx "$1"
+    command -v flatpak >/dev/null 2>&1 && flatpak list --app --columns=application 2>/dev/null | grep -qx "$1"
 }
 is_repository_added() {
     grep -rqs "$1" /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null
@@ -87,14 +87,17 @@ detect_session_type() {
         wayland|x11|tty) echo "$XDG_SESSION_TYPE"; return ;;
     esac
     # Sometimes (e.g. inside sudo) XDG_SESSION_TYPE is unset; ask loginctl.
-    local user sid
+    # Prefer the user's graphical session over manager/tty sessions.
+    local user sid type first=""
     user="$(real_user)"
-    sid="$(loginctl 2>/dev/null | awk -v u="$user" '$3==u {print $1; exit}')"
-    if [ -n "$sid" ]; then
-        loginctl show-session "$sid" 2>/dev/null | awk -F= '/^Type=/{print $2; exit}'
-        return
-    fi
-    echo "unknown"
+    for sid in $(loginctl list-sessions --no-legend 2>/dev/null | awk -v u="$user" '$3==u {print $1}'); do
+        type="$(loginctl show-session "$sid" -p Type --value 2>/dev/null)"
+        case "$type" in
+            wayland|x11) echo "$type"; return ;;
+            tty) [ -z "$first" ] && first="$type" ;;
+        esac
+    done
+    echo "${first:-unknown}"
 }
 
 # OS gates.

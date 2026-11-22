@@ -2,6 +2,10 @@
 set -e
 echo "Installing headless applications..."
 
+# The non-root user this machine is being set up for.
+REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || whoami)}"
+REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6)"
+
 # Helper functions
 is_package_installed() {
     dpkg -l "$1" 2>/dev/null | grep -q "^ii"
@@ -61,7 +65,7 @@ if [ $PYENV_DEPS_NEEDED -eq 1 ]; then
     apt install -y $PYENV_DEPENDENCIES
 fi
 
-if [ ! -d "/root/.pyenv" ] && [ ! -d "/home/jason/.pyenv" ]; then
+if [ ! -d "/root/.pyenv" ] && [ ! -d "$REAL_HOME/.pyenv" ]; then
     echo "Installing pyenv..."
     curl https://pyenv.run | bash
     echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc
@@ -72,7 +76,7 @@ else
 fi
 
 # nvm
-if [ ! -d "/root/.nvm" ] && [ ! -d "/home/jason/.nvm" ]; then
+if [ ! -d "/root/.nvm" ] && [ ! -d "$REAL_HOME/.nvm" ]; then
     echo "Installing nvm..."
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 else
@@ -144,7 +148,7 @@ check_rust_installed() {
     fi
     
     # Check if installation exists but not in path
-    if [ -f "$HOME/.cargo/bin/rustc" ] || [ -f "/home/jason/.cargo/bin/rustc" ]; then
+    if [ -f "$HOME/.cargo/bin/rustc" ] || [ -f "$REAL_HOME/.cargo/bin/rustc" ]; then
         source "$HOME/.cargo/env" 2>/dev/null || true
         return 0
     fi
@@ -202,7 +206,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/startup_notification.sh
-User=jason
+User=$REAL_USER
 
 [Install]
 WantedBy=multi-user.target
@@ -229,7 +233,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/bin/python3 /usr/local/bin/disk_monitor.py
-User=jason
+User=$REAL_USER
 Restart=always
 RestartSec=3600
 
@@ -267,9 +271,9 @@ EOF
 fi
 
 # Install useful aliases for headless management
-if [ ! -f /home/jason/.bash_aliases ]; then
+if [ ! -f $REAL_HOME/.bash_aliases ]; then
     echo "Setting up useful aliases..."
-    cat > /home/jason/.bash_aliases << EOF
+    cat > $REAL_HOME/.bash_aliases << EOF
 # System monitoring
 alias ports='netstat -tulanp'
 alias meminfo='free -m -l -t'
@@ -305,7 +309,7 @@ alias gc='git commit'
 alias gp='git push'
 alias gl='git log --oneline'
 EOF
-    chown jason:jason /home/jason/.bash_aliases
+    chown "$REAL_USER:$REAL_USER" $REAL_HOME/.bash_aliases
 fi
 
 echo "Headless application installation completed"

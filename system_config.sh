@@ -177,22 +177,15 @@ configure_networking
 systemctl enable ssh
 systemctl start ssh
 
-# Set X11 as default display manager
-cat > /etc/gdm3/custom.conf << EOF
-# GDM configuration storage
-
-[daemon]
-# Force the login screen to use Xorg
-WaylandEnable=false
-
-[security]
-
-[xdmcp]
-
-[chooser]
-
-[debug]
-EOF
+# Wayland is the default session; Ringboard and Tiling Shell both work on it.
+# Older autolinux versions forced Xorg with WaylandEnable=false. Undo that
+# (keeping a backup) instead of forcing anything.
+GDM_CONF=/etc/gdm3/custom.conf
+if [ -f "$GDM_CONF" ] && grep -qE '^\s*WaylandEnable\s*=\s*false' "$GDM_CONF"; then
+    cp -a "$GDM_CONF" "$GDM_CONF.autolinux-backup.$(date +%Y%m%d-%H%M%S)"
+    sed -i -E 's/^\s*WaylandEnable\s*=\s*false.*$/#WaylandEnable=false  (re-enabled Wayland: autolinux)/' "$GDM_CONF"
+    echo "Re-enabled Wayland in $GDM_CONF (takes effect at next login)."
+fi
 
 # Configure sudoers for current user with NOPASSWD
 CURRENT_USER=$(logname || whoami)
