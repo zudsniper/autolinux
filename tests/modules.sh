@@ -129,6 +129,25 @@ AUTOLINUX_MODULES="rust"
 _assert "unselected single module is empty" "$(_stage_modules gnome-extensions)" ""
 
 echo
+echo "==> apt-packages.txt"
+TMPL="$(mktemp)"
+printf '  curl  \n\n# comment\ngit # trailing\n\tjq\n' > "$TMPL"
+_assert "read_package_list strips blanks/comments/whitespace" "$(read_package_list "$TMPL" | tr '\n' ' ')" "curl git jq "
+rm -f "$TMPL"
+n="$(read_package_list "$REPO_DIR/apt-packages.txt" | wc -l)"
+if [ "$n" -gt 0 ]; then _ok "apt-packages.txt has $n packages"; else _bad "apt-packages.txt is empty"; fi
+if read_package_list "$REPO_DIR/apt-packages.txt" | grep -qvE '^[a-z0-9][a-z0-9.+-]+$'; then
+    _bad "apt-packages.txt: every line is a valid package name"
+else
+    _ok "apt-packages.txt: every line is a valid package name"
+fi
+if grep -qE '^PKGS=\(' "$REPO_DIR/modules/base-packages.sh"; then
+    _bad "base-packages reads the list at run time (no inline PKGS)"
+else
+    _ok "base-packages reads the list at run time (no inline PKGS)"
+fi
+
+echo
 echo "==> no forced X11"
 if grep -rqE '^\s*WaylandEnable\s*=\s*false' "$REPO_DIR"/*.sh "$REPO_DIR"/stages "$REPO_DIR"/modules "$REPO_DIR"/lib; then
     _bad "nothing writes WaylandEnable=false"

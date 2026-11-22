@@ -1,9 +1,15 @@
 # shellcheck shell=bash
-# Network helpers for system_config.sh: derive a static address from the
-# subnet the router actually hands out, instead of assuming 192.168.1.0/24.
+# Network helpers for system_config.sh (--static-ip / --wol). Nothing here
+# changes the system; it only reads routes, addresses and DNS.
 
 if [ -n "${_AUTOLINUX_NET_SH_LOADED:-}" ]; then return 0; fi
 _AUTOLINUX_NET_SH_LOADED=1
+
+net_valid_ip() {
+    [[ "$1" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+    local o
+    for o in "${BASH_REMATCH[@]:1}"; do [ "$o" -le 255 ] || return 1; done
+}
 
 ip_to_int() {
     local IFS=. a b c d
@@ -65,4 +71,19 @@ net_addr_in_use() {
 net_nm_connection() {
     nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null \
         | awk -F: -v d="$1" '$NF == d { NF--; print; exit }' OFS=:
+}
+
+# net_current_dns <iface> → IPv4 DNS servers currently in use on it,
+# space-separated (usually what the router serves via DHCP).
+net_current_dns() {
+    local out=""
+    if command -v nmcli >/dev/null 2>&1; then
+        out="$(nmcli -g IP4.DNS device show "$1" 2>/dev/null | tr '|' ' ')"
+    fi
+    if [ -z "${out// /}" ] && command -v resolvectl >/dev/null 2>&1; then
+        out="$(resolvectl dns "$1" 2>/dev/null | cut -d: -f2-)"
+    fi
+    local d res=()
+    for d in $out; do net_valid_ip "$d" && res+=("$d"); done
+    echo "${res[*]}"
 }

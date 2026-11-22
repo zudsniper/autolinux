@@ -53,7 +53,7 @@ Selection is applied in order: profile (or `--only`), then `--with`, then `--wit
 
 | Group | Module | Profiles | What it does |
 |---|---|---|---|
-| core | `base-packages` | minimal, full | CLI tools, build essentials, btop/nvtop, runtime libs |
+| core | `base-packages` | minimal, full | everything in [`apt-packages.txt`](apt-packages.txt) |
 | core | `flatpak` | minimal, full | Flatpak, Flathub, Flatseal |
 | core | `rust` | minimal, full | rustup, **stable** toolchain (per user) |
 | desktop | `kitty` | minimal, full | Official kitty build plus the config above |
@@ -72,6 +72,10 @@ Selection is applied in order: profile (or `--only`), then `--with`, then `--wit
 | security | `yubikey`, `openvpn`, `kleopatra` | full | ykman, pcscd, age + age-plugin-yubikey; OpenVPN; Kleopatra |
 | hardware | `ckb-next`, `piper` | full | Corsair and gaming-mouse drivers |
 | extras | `notify-services` | opt-in | Discord startup ping + disk monitor (gists; needs a webhook) |
+
+### Base apt packages
+
+The `base-packages` module installs whatever is listed in [`apt-packages.txt`](apt-packages.txt), one package name per line, read at run time. Edit that file to change the base set; blank lines and `# comments` are ignored, and names apt doesn't know are skipped with a warning instead of failing the whole batch. Point at a different list with `sudo AUTOLINUX_APT_PACKAGES=/path/to/list.txt ./install.sh`. Packages that need a vendor repo (Chrome, VS Code, Docker, ...) stay in their own modules.
 
 ### Ringboard
 
@@ -131,7 +135,7 @@ sudo ./bootstrap.sh --force-replay 03-detect-starting-de
 sudo ./bootstrap.sh --rollback       # release holds, remove resume hooks, list snapshots
 ```
 
-The module selection (`--profile`, `--modules`, `--with`, `--without`, `-i`) is saved in `state.json`, so a resume after reboot reuses it.
+The module selection (`--profile`, `--modules`, `--with`, `--without`, `-i`) is saved in `state.json`, so a resume after reboot reuses it. So are the network flags (`--static-ip`, `--gateway`, `--dns`, `--wol`), which are handed to `system_config.sh` at stage 10; without them the network is left alone.
 
 | # | Stage | Reboots? |
 |---|---|---|
@@ -145,7 +149,7 @@ The module selection (`--profile`, `--modules`, `--with`, `--without`, `-i`) is 
 | 07 | confirm the GNOME session is active | no |
 | 08 | purge xfce4/xubuntu/lightdm packages (computed live; GNOME deps excluded) | no |
 | 09 | archive `~/.config/xfce4/` | no |
-| 10 | `system_config.sh`: swap, Wake-on-LAN/static IP, SSH, passwordless sudo, re-enables Wayland if an old run disabled it | no |
+| 10 | `system_config.sh`: swap, SSH, passwordless sudo, re-enables Wayland if an old run disabled it; static IP / Wake-on-LAN only if flagged | no |
 | 11 | app/dev/desktop modules | no |
 | 12 | `desktop-settings` module | no |
 | 13 | `gnome-extensions` module | no |
@@ -154,14 +158,27 @@ The module selection (`--profile`, `--modules`, `--with`, `--without`, `-i`) is 
 
 Safety: XFCE is never purged from inside an XFCE session. Packages are held before any purge, and the purge set is computed rather than taken from a static list. Bootloader integrity is checked before every reboot, state writes are atomic, and `--dry-run` prints every mutating command instead of running it.
 
+## `system_config.sh`
+
+Base system settings, each shown as a numbered step and listed in a summary at the end (✔ changed, • already fine, – skipped, ✘ failed):
+
+```bash
+sudo ./system_config.sh                                   # swap ≥ 8 GB, SSH, Wayland, passwordless sudo
+./system_config.sh --dry-run                              # preview; works without root (some checks need root)
+sudo ./system_config.sh --static-ip 192.168.50.20         # also pin this address
+sudo ./system_config.sh --static-ip 10.0.0.5/24 --gateway 10.0.0.1 --dns 1.1.1.1,9.9.9.9
+sudo ./system_config.sh --wol                             # Wake-on-LAN on the wired default interface
+```
+
+The network is **not touched unless you pass a network flag**. With `--static-ip`, the prefix and gateway default to the current default route, and DNS defaults to the servers DHCP is handing out right now (typically the router), so local DNS keeps working. The address is refused if it's outside the gateway's subnet or another host already answers on it. On desktops the change goes on the active NetworkManager connection (previous settings saved under `/var/backups/autolinux-nm-*`, undo command printed); without NetworkManager it writes `/etc/netplan/60-autolinux-static.yaml`. Reserve the address in the router's DHCP settings too.
+
 ## Wayland
 
 Nothing here forces Xorg anymore. If an older autolinux run left `WaylandEnable=false` in `/etc/gdm3/custom.conf`, `system_config.sh` comments it out (with a timestamped backup), and Wayland returns at the next login.
 
 ## Warnings
 
-- `system_config.sh --yes` enables **Wake-on-LAN** (wired NICs only) and a **static IP derived from the router's subnet**: it reads the default route (e.g. `192.168.50.1/24`) and picks host `.69` in that subnet, falling back to the current DHCP lease if `.69` is taken. On desktops it's applied to the active NetworkManager connection (old settings saved under `/var/backups/autolinux-nm-*`, undo command printed); without NetworkManager it writes `/etc/netplan/60-autolinux-static.yaml`. Override with `sudo AUTOLINUX_STATIC_IP=no|<addr> AUTOLINUX_STATIC_HOST=<n> AUTOLINUX_DNS="…" ./system_config.sh`. Reserve the address in the router's DHCP settings.
-- It also gives the invoking user **passwordless sudo** (`/etc/sudoers.d/<user>`).
+- `system_config.sh` gives the invoking user **passwordless sudo** (`/etc/sudoers.d/<user>`, validated with `visudo`; skipped when an equivalent rule already exists).
 - `relink_home.sh` moves `/home` to `/home.bak` when re-attaching an existing home partition.
 - A broken desktop after extension changes: `gsettings set org.gnome.shell disable-user-extensions true` (or `./reset_gnome_extensions.sh`).
 
@@ -176,7 +193,7 @@ Nothing here forces Xorg anymore. If an older autolinux run left `WaylandEnable=
 
 ```bash
 ./tests/modules.sh         # module contracts, selection, dry-run safety, stage filters, CLI
-./tests/net.sh             # static-IP derivation from the router subnet
+./tests/net.sh             # network helpers + system_config.sh flags (dry-run)
 ./tests/state-machine.sh   # state.json, detect helpers, bootstrap CLI
 ```
 

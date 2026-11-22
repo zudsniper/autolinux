@@ -25,6 +25,13 @@ apt_install() {
     DEBIAN_FRONTEND=noninteractive run_or_dry apt-get install -y "${missing[@]}"
 }
 
+# read_package_list <file> — print package names, one per line. Blank lines,
+# surrounding whitespace and '#' comments are ignored.
+read_package_list() {
+    [ -r "$1" ] || { log_error "package list not found: $1"; return 1; }
+    sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$1" | grep -v '^$'
+}
+
 # all_packages_installed pkg...  — detect helper.
 all_packages_installed() {
     local p
