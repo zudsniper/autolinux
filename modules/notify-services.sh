@@ -7,6 +7,7 @@ MOD_GROUP="extras"
 MOD_PROFILES=""
 mod_detect() { is_service_enabled discord-startup.service && is_service_enabled disk-monitor.service; }
 mod_install() {
+    apt_install_lean python3 dconf-cli || return 1
     local u; u="$(real_user)"
     run_or_dry curl -fsSL -o /usr/local/bin/discord.sh https://raw.githubusercontent.com/fieu/discord.sh/master/discord.sh || return 1
     run_or_dry curl -fsSL -o /usr/local/bin/startup_notification.sh https://gist.githubusercontent.com/zudsniper/cac1d22e06d57bcb2b1208ed3ce5400e/raw/startup_notification.sh || return 1

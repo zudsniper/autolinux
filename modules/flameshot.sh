@@ -9,6 +9,7 @@ mod_detect() {
         && [ -e "$(real_home)/.config/autostart/org.flameshot.Flameshot.desktop" ]
 }
 mod_install() {
+    apt_install_lean python3 dconf-cli || return 1
     apt_install flameshot || return 1
     as_user dconf write /org/gnome/shell/keybindings/show-screenshot-ui "@as []"
     as_user dconf write /org/gnome/shell/keybindings/screenshot "@as []"

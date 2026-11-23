@@ -31,6 +31,7 @@ mod_detect() {
 }
 
 mod_install() {
+    apt_install_lean python3 dconf-cli || return 1
     user_dconf_load "$DESKTOP_INI" || return 1
     as_user gsettings set org.gnome.shell favorite-apps "$FAVORITES"
 }

@@ -27,6 +27,7 @@ mod_detect() { _kitty_new_enough && _kitty_config_current; }
 
 mod_install() {
     if ! _kitty_new_enough; then
+        apt_install_lean xz-utils || return 1   # the installer ships a .txz
         as_user_sh 'curl -fsSL https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin launch=n' || return 1
         as_user_sh '
             set -e

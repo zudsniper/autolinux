@@ -25,6 +25,18 @@ apt_install() {
     DEBIAN_FRONTEND=noninteractive run_or_dry apt-get install -y "${missing[@]}"
 }
 
+# apt_install_lean pkg...  — like apt_install, without "Recommends" (which
+# can turn a few small tools into 100+ packages, e.g. PackageKit/AppStream).
+apt_install_lean() {
+    local missing=() p
+    for p in "$@"; do
+        is_package_installed "$p" || missing+=("$p")
+    done
+    [ "${#missing[@]}" -eq 0 ] && return 0
+    apt_update_once
+    DEBIAN_FRONTEND=noninteractive run_or_dry apt-get install -y --no-install-recommends "${missing[@]}"
+}
+
 # read_package_list <file> — print package names, one per line. Blank lines,
 # surrounding whitespace and '#' comments are ignored.
 read_package_list() {

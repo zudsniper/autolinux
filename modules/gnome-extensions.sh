@@ -70,6 +70,7 @@ _ego_install() {
 }
 
 mod_install() {
+    apt_install_lean python3 dconf-cli || return 1
     user_bus_available || { log_error "needs a running GNOME session for $(real_user)"; return 1; }
     apt_install gnome-shell-extensions gnome-shell-extension-manager gnome-tweaks jq curl unzip || return 1
 
