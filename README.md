@@ -1,339 +1,261 @@
-# Ubuntu Auto-Configuration Scripts
+# autolinux
 
-A complete automation suite for setting up Ubuntu (24.10 / 25.10) with a custom desktop environment, applications, and system configurations. Includes a safe Xubuntu→GNOME migration flow that survives reboots.
+Rebuilds my Ubuntu workstation: **Ubuntu 25.10, GNOME 49 on Wayland**, with Ringboard, Tiling Shell, kitty and the usual apps. Every piece is a small module that checks the live system first, so re-running is always safe. You can pick modules from a checklist or drive everything with flags.
+
+## Quick install (one line)
+
+> **Needs `curl`.** A fresh Ubuntu install may not have it, so run this first:
+> ```bash
+> sudo apt update && sudo apt install -y curl
+> ```
+
+Each line downloads the repo to `~/.local/share/autolinux` (no git needed) and runs [`install.sh`](#installsh) with sudo. It checks what's already installed first, lists those modules as **already installed**, and installs only the rest.
+
+**Everything** (the `full` profile):
+```bash
+curl -fsSL https://raw.githubusercontent.com/zudsniper/autolinux/master/get.sh | bash -s -- --yes
+```
+
+**Just the shell + terminal basics** (`~/.bashrc`, kitty + `kitty.conf`, `curl`, `jq`, `git`, `gh`):
+```bash
+curl -fsSL https://raw.githubusercontent.com/zudsniper/autolinux/master/get.sh | bash -s -- --only bashrc,kitty,gh --yes
+```
+
+**Everything except GNOME extensions**:
+```bash
+curl -fsSL https://raw.githubusercontent.com/zudsniper/autolinux/master/get.sh | bash -s -- --without gnome-extensions --yes
+```
+
+**What's already installed?** (`--doctor`, changes nothing):
+```bash
+curl -fsSL https://raw.githubusercontent.com/zudsniper/autolinux/master/get.sh | bash -s -- --doctor
+```
+
+Notes:
+- Drop `--yes` to get the checklist instead. The one-liner hands `install.sh` your terminal, so the checklist works.
+- Any `install.sh` flag works after `bash -s --`, for example `--dry-run` or `--with portainer`.
+- `curl`, `git` and `jq` come from the `essentials` module. It always runs first because the other modules need it.
+- The full profile leaves out the opt-in modules (`normcap`, `kitty-monitor`, `portainer`, `notify-services`). Add them with `--with`.
+- To install from a branch or tag instead of `master`, put `AUTOLINUX_REF=<ref>` in front of `bash`: `curl ... | AUTOLINUX_REF=<ref> bash -s -- ...`.
+
+From a clone instead:
+
+```bash
+git clone https://github.com/zudsniper/autolinux && cd autolinux
+./install.sh --doctor           # what's already installed? (changes nothing)
+sudo ./install.sh               # checklist, full profile preselected
+```
+
+There are two entry points:
+
+| Script | Use it when |
+|---|---|
+| [`install.sh`](install.sh) | You're already on GNOME and want the apps, desktop setup and tools. |
+| [`bootstrap.sh`](#bootstrapsh-xubuntu--gnome-migration) | You're starting from **Xubuntu** (or a fresh install) and want the full migration: snapshot, package holds, GNOME stack, reboot/resume, Xfce cleanup, system config, then the same modules. |
 
 ## Kitty config only
 
-Just want the kitty terminal config? One line, no clone:
+One line, no clone:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zudsniper/autolinux/master/kitty/install.sh | bash
 ```
 
-What you get ([`kitty/kitty.conf`](kitty/kitty.conf)):
-- **No GNOME titlebar.** The OS titlebar is hidden (resize shadows stay). Move windows with **Super+drag**.
-- **VSCode-style title strip** above every split, lone windows included. The active split gets a blue `●` and bold title.
+What you get ([`kitty/kitty.conf`](kitty/kitty.conf), [`kitty/window_title_bar.py`](kitty/window_title_bar.py)):
+- **No GNOME titlebar.** The OS titlebar is hidden (resize shadows stay). Move windows with **Super+drag**. The active split's title bar shows a gray `super + drag to move` reminder in its right corner.
+- **VSCode-style title strip** above every split, lone windows included. The active split gets a blue `●` and a bold title.
 - **Tab bar** that only shows once a second tab exists.
 - **Splits layout**: `F5` hsplit, `F6` vsplit, `F7` rotate, `Shift+arrows` move a split, `Ctrl+Shift+[`/`]` cycle splits, `Ctrl+Alt+T` rename a split, `Ctrl+Shift+Alt+T` rename a tab.
 - Fixed 1500×900 starting window size.
 
-The installer backs up any existing `~/.config/kitty/kitty.conf` to `kitty.conf.bak-<timestamp>`, then live-reloads running kitty windows. It needs **kitty ≥ 0.46** for the title strips, and it warns you if yours is older. Distro packages often are, so use the [official installer](https://sw.kovidgoyal.net/kitty/binary/). `app_install.sh` applies this config automatically after installing kitty.
+The installer backs up any file it replaces to `<name>.bak-<timestamp>` and live-reloads running kitty windows. It needs **kitty ≥ 0.46**. Distro packages are older, so use the [official installer](https://sw.kovidgoyal.net/kitty/binary/) (the `kitty` module does this for you).
 
-## Recommended: `bootstrap.sh`
-
-> **⚠️ UNTESTED ON REAL HARDWARE — 2026-05-06.** The state machine, stage logic, and lib/ helpers have only been exercised via `--dry-run` on a machine that is already on GNOME (cleanup-only path) and via the `tests/state-machine.sh` unit suite. The full Xubuntu→GNOME migration flow (stages 04–07: install GNOME stack, switch DM, reboot, verify) has **not been validated on a live Xubuntu install**. Test in a VM before running on a machine you care about. Use `--dry-run` first.
-
-`bootstrap.sh` is a state-machine orchestrator that runs the migration and setup as 16 ordered stages with checkpoints in `/var/lib/autolinux/state.json`. Stages that need a reboot exit cleanly after arming a resume hook (autostart `.desktop` + systemd unit) so the next login picks up exactly where it left off.
+## `install.sh`
 
 ```bash
-sudo ./bootstrap.sh                  # auto-detect + run pending stages
-sudo ./bootstrap.sh --status         # show state machine + per-stage status
-sudo ./bootstrap.sh --dry-run        # show what would happen, change nothing
-sudo ./bootstrap.sh --list-stages    # print the stage list
-sudo ./bootstrap.sh --rollback       # release holds, remove resume hooks, list snapshots
-sudo ./bootstrap.sh --only 08-remove-xfce        # run one stage
-sudo ./bootstrap.sh --from 10-system-config      # start at a stage; earlier stages must already be done
-sudo ./bootstrap.sh --force-replay 03-detect-starting-de   # re-run a 'done' stage
-sudo ./bootstrap.sh --yes            # accept all confirmation prompts
-sudo ./bootstrap.sh --allow-pending-upgrades     # bypass the 'no pending upgrades' guard
+sudo ./install.sh                              # checklist (default in a terminal)
+sudo ./install.sh --yes                        # full profile, no questions
+sudo ./install.sh --profile minimal --yes      # the essentials only
+sudo ./install.sh --only ringboard,kitty       # just these (dependencies are added)
+sudo ./install.sh --with portainer --without steam,obs --yes
+sudo ./install.sh --without hardware --yes     # groups work anywhere a module name does
+sudo ./install.sh --dry-run                    # report only
+./install.sh --doctor                          # which modules are already installed?
+./install.sh --list-modules                    # the table below, from the source
 ```
 
-### What the stages do
+Every run goes through the same steps:
+1. **Check.** It runs the `--doctor` check on the selected modules. Each one shows as `✔ installed` or `○ not installed`.
+2. **Install.** It installs only the missing modules, numbered `[1/n]`, `[2/n]`, and so on.
+3. **Summary.** Each module shows as `✔ installed now`, `• already installed` or `✘ failed`. If anything failed, the script exits with status 1, and re-running retries just those modules.
+
+```
+━━━ Checking what's already installed ━━━
+  ✔ essentials         installed
+  ✔ flatpak            installed
+  ○ normcap            not installed     NormCap OCR screen-capture (flatpak) on Ctrl+Super+Alt+O
+
+  2 already installed · 1 missing
+```
+
+`--doctor` on its own checks every module, opt-in ones included, and exits without changing anything. Combine it with `--only`, `--with`, `--without` or `--profile` to check a subset. It works without sudo, but a few checks (such as `ufw status`) are only accurate as root.
+
+Environment overrides go *after* `sudo` (it drops your environment): `sudo AUTOLINUX_UFW_ENABLE=1 RINGBOARD_VERSION=0.15.0 ./install.sh`.
+
+Selection is applied in order: profile (or `--only`), then `--with`, then `--without`, then the checklist if you're interactive. Dependencies (for example `ringboard` → `rust`) are always added back. Logs and a status file go to `/var/log/autolinux/`.
+
+### Modules
+
+| Group | Module | Profiles | What it does |
+|---|---|---|---|
+| core | `essentials` | always | curl, git, jq, gnupg, ca-certificates, dconf-cli (always runs first) |
+| core | `base-packages` | minimal, full | everything in [`apt-packages.txt`](apt-packages.txt) |
+| core | `bashrc` | minimal, full | [`dotfiles/bashrc`](dotfiles/bashrc) → `~/.bashrc`. The old file is backed up to `~/.bashrc.bak-<timestamp>`. It counts as installed when the header and version line match, so lines that nvm or rustup append are left alone. |
+| core | `flatpak` | minimal, full | Flatpak, Flathub, Flatseal |
+| core | `rust` | minimal, full | rustup, **stable** toolchain (per user) |
+| desktop | `kitty` | minimal, full | Official kitty build plus the config above |
+| desktop | **`ringboard`** | minimal, full | Ringboard clipboard manager, see below |
+| desktop | `gnome-extensions` | minimal, full | Tiling Shell, Hide Topbar, Clipboard Indicator, plus Tiling Shell layout/gaps |
+| desktop | `desktop-settings` | minimal, full | Dark mode, pink accent, Yaru-dark icons, flat mouse, dock size and favorites |
+| desktop | `flameshot` | full | Flameshot on `Print` (GNOME's screenshot keys cleared) plus autostart |
+| desktop | `normcap` | opt-in | NormCap OCR on `Ctrl+Super+Alt+O` |
+| desktop | `kitty-monitor` | opt-in | Opens kitty with btop \| nvtop at login |
+| apps | `chrome`, `1password` | minimal, full | Google Chrome, 1Password desktop + CLI |
+| apps | `signal`, `discord`, `spotify`, `localsend`, `rustdesk`, `steam`, `obs`, `kate`, `vlc`, `transmission`, `claude-desktop` | full | The rest of the desktop apps (flatpaks where that's how they're installed here) |
+| dev | `vscode`, `gh`, `nvm` | minimal, full | VS Code, GitHub CLI, nvm + Node LTS |
+| dev | `cursor`, `docker`, `pyenv`, `uv`, `claude-code`, `cloudflared`, `virtualization` | full | Editors, containers, Python tooling, Claude Code, Cloudflare Tunnel, QEMU/libvirt |
+| dev | `portainer` | opt-in | Portainer CE container |
+| security | `ufw`, `timeshift` | minimal, full | UFW (installed; enabled only with `AUTOLINUX_UFW_ENABLE=1`), Timeshift |
+| security | `yubikey`, `openvpn`, `kleopatra` | full | ykman, pcscd, age + age-plugin-yubikey; OpenVPN; Kleopatra |
+| hardware | `ckb-next`, `piper` | full | Corsair and gaming-mouse drivers |
+| extras | `notify-services` | opt-in | Discord startup ping + disk monitor (gists; needs a webhook) |
+
+### Base apt packages
+
+The `base-packages` module installs whatever is listed in [`apt-packages.txt`](apt-packages.txt), one package name per line, read at run time. Edit that file to change the base set; blank lines and `# comments` are ignored, and names apt doesn't know are skipped with a warning instead of failing the whole batch. Point at a different list with `sudo AUTOLINUX_APT_PACKAGES=/path/to/list.txt ./install.sh`. Packages that need a vendor repo (Chrome, VS Code, Docker, ...) stay in their own modules.
+
+### Ringboard
+
+[Ringboard](https://github.com/SUPERCILEX/clipboard-history) mirrors upstream's `install-with-cargo-systemd.sh`, but it's pinned (`RINGBOARD_VERSION`, default `0.15.0`), runs as you from a sudo context, and never pipes a remote script into bash.
+
+- Builds `clipboard-history-server`, the CLI, `-egui` and a watcher with **stable** Rust.
+- **Watcher:** GNOME doesn't implement the Wayland data-control protocol, so on GNOME the **X11 watcher** is used even under Wayland. It works through XWayland, exactly like the reference machine. Other Wayland compositors are probed with `wayland-interface-check`, same as upstream.
+- Installs the upstream `ringboard-server`, `ringboard-x11`/`-wayland` and `ringboard.slice` systemd **user** units, enables them, and starts them.
+- Launcher plus the `Ctrl+Super+Alt+V` → `ringboard-egui toggle` shortcut (`RINGBOARD_SHORTCUT` to change it). Your existing custom shortcuts are kept.
+
+### GNOME extensions
+
+Extensions are installed as **stable releases from extensions.gnome.org** for your GNOME version. There are no git/npm builds anymore. The module also drops stale entries left by older versions (`hidetopbar@mathieu.bidon.ca`, `unite@hardpixel.eu`) and disables Ubuntu's Tiling Assistant, which fights Tiling Shell. On Wayland, newly installed extensions load at your next login.
+
+Tiling Shell's layouts, gaps and snap-assist setting live in [`dconf/tilingshell.ini`](dconf/tilingshell.ini). Desktop settings live in [`dconf/desktop.ini`](dconf/desktop.ini).
+
+### Refreshing the repo from a machine
+
+```bash
+./tools/profile.sh                  # Markdown report: extensions, flatpaks, apt repos, cargo, units, shortcuts
+./tools/profile.sh --update-dconf   # also re-capture dconf/tilingshell.ini
+sudo ./install.sh --dry-run         # anything the modules don't detect yet
+```
+
+### Adding a module
+
+Create `modules/<name>.sh` and add `<name>` to `MODULE_ORDER` in [`lib/modules.sh`](lib/modules.sh), after its dependencies:
+
+```bash
+# shellcheck shell=bash
+# shellcheck disable=SC2034  # MOD_* metadata is read by lib/modules.sh
+MOD_DESC="What it installs"
+MOD_GROUP="apps"               # core | desktop | apps | dev | security | hardware | extras
+MOD_PROFILES="full"            # "" = opt-in only
+MOD_DEPENDS="flatpak"          # optional
+mod_detect()  { is_flatpak_installed org.example.App; }   # read-only!
+mod_install() { flatpak_install org.example.App; }
+```
+
+Helpers: `apt_install`, `apt_add_repo`, `flatpak_install`, `deb_install_url` ([`lib/pkg.sh`](lib/pkg.sh)); `as_user`, `as_user_sh`, `user_dconf_load`, `gnome_add_keybinding` ([`lib/user.sh`](lib/user.sh)). `--dry-run` never calls `mod_install`.
+
+## `bootstrap.sh` (Xubuntu → GNOME migration)
+
+> **⚠️ The migration stages (04–07) are UNTESTED ON REAL HARDWARE.** They've only run under `--dry-run` and the unit tests. Test in a VM first.
+
+`bootstrap.sh` runs 16 ordered stages with checkpoints in `/var/lib/autolinux/state.json`. Stages that need a reboot arm a resume hook (autostart `.desktop` + systemd unit) so the next login picks up where it left off. Every stage detects "already satisfied" from the live system, so on a box that's already on GNOME it skips straight to the cleanup and module stages.
+
+```bash
+sudo ./bootstrap.sh --dry-run        # show what would happen, change nothing
+sudo ./bootstrap.sh                  # run pending stages (module checklist first)
+sudo ./bootstrap.sh --yes --profile minimal --without steam
+sudo ./bootstrap.sh --status         # state machine + per-stage status
+sudo ./bootstrap.sh --list-stages
+sudo ./bootstrap.sh --only 08-remove-xfce
+sudo ./bootstrap.sh --from 10-system-config
+sudo ./bootstrap.sh --force-replay 03-detect-starting-de
+sudo ./bootstrap.sh --rollback       # release holds, remove resume hooks, list snapshots
+```
+
+The module selection (`--profile`, `--modules`, `--with`, `--without`, `-i`) is saved in `state.json`, so a resume after reboot reuses it. So are the network flags (`--static-ip`, `--gateway`, `--dns`, `--wol`), which are handed to `system_config.sh` at stage 10; without them the network is left alone.
 
 | # | Stage | Reboots? |
 |---|---|---|
 | 00 | preflight (Ubuntu? dpkg sane? no pending upgrades? network?) | no |
 | 01 | timeshift snapshot tagged `autolinux-pre-migration` | no |
-| 02 | `apt-mark hold` for ubuntu-desktop, gdm3, gnome-shell, kernel, GRUB, shim | no |
-| 03 | record starting DE / DM / session type in state.json | no |
-| 04 | install GNOME stack (`ubuntu-desktop gdm3 gnome-shell gnome-session ...`) | no |
-| 05 | switch default display manager to gdm3 (debconf-preseeded) | no |
-| 06 | arm resume hook + reboot, **only if** the running DE is not GNOME | **yes** |
-| 07 | post-reboot: confirm GNOME session is active and GDM3 is default | no |
-| 08 | safely purge xfce4-/xubuntu-/libxfce4*/lightdm packages (computed live, ubuntu-desktop deps excluded) | no |
-| 09 | archive `~/.config/xfce4/` to `~/.config/autolinux-backup/xfce4-<ts>/` | no |
-| 10 | run `system_config.sh` (swap, network, SSH, X11, NOPASSWD sudo) | no |
-| 11 | run `app_install.sh` (Chrome, 1Password, Discord, Steam, Rust, ringboard, …) | no |
-| 12 | run `desktop_config.sh` (GNOME theme, dock, favorite apps) | no |
-| 13 | run `gnome_extensions.sh` (Tiling Shell, Hide Top Bar) | no |
-| 14 | release the package holds added in stage 02 | no |
-| 15 | remove resume hooks, optional snapshot deletion, summary | no |
+| 02 | `apt-mark hold` ubuntu-desktop, gdm3, gnome-shell, kernel, GRUB, shim | no |
+| 03 | record starting DE / DM / session type | no |
+| 04 | install the GNOME stack | no |
+| 05 | switch the default display manager to gdm3 | no |
+| 06 | arm resume hook + reboot, **only if** the running DE isn't GNOME | **yes** |
+| 07 | confirm the GNOME session is active | no |
+| 08 | purge xfce4/xubuntu/lightdm packages (computed live; GNOME deps excluded) | no |
+| 09 | archive `~/.config/xfce4/` | no |
+| 10 | `system_config.sh`: swap, SSH, passwordless sudo, re-enables Wayland if an old run disabled it; static IP / Wake-on-LAN only if flagged | no |
+| 11 | app/dev/desktop modules | no |
+| 12 | `desktop-settings` module | no |
+| 13 | `gnome-extensions` module | no |
+| 14 | release the stage-02 package holds | no |
+| 15 | remove resume hooks, summary | no |
 
-Stages individually detect "already satisfied" by inspecting the live system, **independent of state.json**. So if you run bootstrap on a box where someone manually installed GNOME, it will skip stages 02–07 and pick up at the cleanup steps. State drift (a "done" stage that no longer detects) aborts with a `--force-replay` hint instead of silently re-running.
+Safety: XFCE is never purged from inside an XFCE session. Packages are held before any purge, and the purge set is computed rather than taken from a static list. Bootloader integrity is checked before every reboot, state writes are atomic, and `--dry-run` prints every mutating command instead of running it.
 
-### Safety mechanisms
+## `system_config.sh`
 
-- **Never purge XFCE while inside an XFCE session.** Stage 08 hard-aborts.
-- **Hold before purge.** ubuntu-desktop, gdm3, gnome-shell, linux-generic, GRUB, shim are all held during stages 02–13 so `apt autoremove` cannot cascade them out.
-- **Computed purge set, not a static kill list.** Stage 08 subtracts deps of ubuntu-desktop / ubuntu-desktop-minimal / gnome-shell from the xfce-pattern match.
-- **Bootloader integrity check before every reboot.** Two kernels in `/boot`, ≥200MB free on `/boot/efi`, valid efibootmgr entry.
-- **Pre-migration timeshift snapshot.** rsync mode (works on ext4). Tagged so we can find/remove ours.
-- **Atomic state writes** with `mv tmp final` and a JSON-validation gate before publish.
-- **`--dry-run`** prints every `apt`/`mv`/`dpkg` invocation without touching the system.
-
-### Resume across reboot
-
-Stage 06 installs two layers of resume hook before rebooting:
-1. `~/.config/autostart/autolinux-resume.desktop` (primary; matches the existing repo's autostart pattern)
-2. `/etc/systemd/system/autolinux-resume.service` (fallback if user disabled autostart globally)
-
-Both invoke `/usr/local/bin/autolinux-resume`, which opens a terminal (kitty / gnome-terminal / xterm in that order) and runs `sudo -E ./bootstrap.sh --resume`. The wrapper self-removes when state.status is `done`. Stage 15 also removes the hooks explicitly.
-
-### Tests
+Base system settings, each shown as a numbered step and listed in a summary at the end (✔ changed, • already fine, – skipped, ✘ failed):
 
 ```bash
-./tests/state-machine.sh
+sudo ./system_config.sh                                   # swap ≥ 8 GB, SSH, Wayland, passwordless sudo
+./system_config.sh --dry-run                              # preview; works without root (some checks need root)
+sudo ./system_config.sh --static-ip 192.168.50.20         # also pin this address
+sudo ./system_config.sh --static-ip 10.0.0.5/24 --gateway 10.0.0.1 --dns 1.1.1.1,9.9.9.9
+sudo ./system_config.sh --wol                             # Wake-on-LAN on the wired default interface
 ```
 
-Exercises state.sh atomic writes, malformed-JSON recovery, stage transitions, array dedupe/replace, detect.sh helpers, and bootstrap.sh CLI flags.
+The network is **not touched unless you pass a network flag**. With `--static-ip`, the prefix and gateway default to the current default route, and DNS defaults to the servers DHCP is handing out right now (typically the router), so local DNS keeps working. The address is refused if it's outside the gateway's subnet or another host already answers on it. On desktops the change goes on the active NetworkManager connection (previous settings saved under `/var/backups/autolinux-nm-*`, undo command printed); without NetworkManager it writes `/etc/netplan/60-autolinux-static.yaml`. Reserve the address in the router's DHCP settings too.
 
----
+## Wayland
 
-## Project Overview
+Nothing here forces Xorg anymore. If an older autolinux run left `WaylandEnable=false` in `/etc/gdm3/custom.conf`, `system_config.sh` comments it out (with a timestamped backup), and Wayland returns at the next login.
 
-## 🎯 Project Overview
+## Warnings
 
-This collection of scripts transforms a fresh Ubuntu 24.10 installation into a fully configured development and productivity workstation with:
-- Custom GNOME desktop environment with extensions
-- Development tools (VS Code, Cursor, Docker, etc.)
-- Gaming and entertainment applications
-- System hardening and optimizations
-- Static IP configuration with Wake-on-LAN
+- `system_config.sh` gives the invoking user **passwordless sudo** (`/etc/sudoers.d/<user>`, validated with `visudo`; skipped when an equivalent rule already exists).
+- `relink_home.sh` moves `/home` to `/home.bak` when re-attaching an existing home partition.
+- A broken desktop after extension changes: `gsettings set org.gnome.shell disable-user-extensions true` (or `./reset_gnome_extensions.sh`).
 
-## 📋 Table of Contents
+## Other scripts
 
-1. [Prerequisites & Requirements](#prerequisites--requirements)
-2. [Installation Order](#installation-order)
-3. [Script Descriptions](#script-descriptions)
-4. [Dangerous Operations & Warnings](#dangerous-operations--warnings)
-5. [Safe Configuration Options](#safe-configuration-options)
-6. [Headless Server Installation](#headless-server-installation)
-7. [Troubleshooting](#troubleshooting)
+- [`headless/`](headless/README.md): server/SSH-only variant.
+- `relink_home.sh`: reuse an existing `/home` partition after a reinstall (UID matching, fstab, backups).
+- `add_rustdesk_autostart.sh`: optional RustDesk autostart.
+- `app_install.sh`, `desktop_config.sh`, `gnome_extensions.sh`: kept as thin wrappers around `install.sh`.
 
-## 🔧 Prerequisites & Requirements
-
-### Hardware Requirements
-- **Disk Space**: Minimum 100GB for root partition + 16-17GB swap partition
-- **RAM**: 8GB minimum, 16GB recommended
-- **Network**: Ethernet connection for static IP configuration
-
-### Software Requirements
-- Fresh Ubuntu 24.10 installation
-- User with sudo privileges (script assumes username `jason`)
-- Internet connection for package downloads
-
-### Pre-Installation Setup
-If using the autoinstall method:
-1. Generate password hash: `mkpasswd --method=SHA-512`
-2. Update `autoinstall.yaml` with your password hash
-3. Host the setup scripts on a web server or modify the `runcmd` section
-
-## 🚀 Installation Order (Advanced / Manual Mode)
-
-**⚠️ Most users should use `sudo ./bootstrap.sh` instead — see the top of this README.**
-
-The instructions below are for running individual scripts directly, without the state-machine wrapper. There is no resume-across-reboot, no preflight check, and no timeshift snapshot — you are responsible for those yourself.
-
-### For Fresh Desktop Installation:
+## Tests
 
 ```bash
-# 1. System Configuration (MUST RUN FIRST)
-sudo ./system_config.sh
-
-# 2. Application Installation
-sudo ./app_install.sh
-
-# 3. Desktop Environment Configuration
-sudo ./desktop_config.sh
-
-# 4. GNOME Extensions (optional but recommended)
-sudo ./gnome_extensions.sh
-# OR for Just Perfection only:
-sudo ./install_just_perfection.sh
-
-# 5. Reboot to apply all changes
-sudo reboot
+./tests/modules.sh         # module contracts, selection, dry-run safety, stage filters, CLI
+./tests/net.sh             # network helpers + system_config.sh flags (dry-run)
+./tests/state-machine.sh   # state.json, detect helpers, bootstrap CLI
 ```
 
-### For Existing Installation with Separate Home Partition:
+Validation so far is shellcheck, both suites, and `--dry-run` on the reference machine (every module detects as set up). A full fresh install hasn't been run in a VM yet.
 
-```bash
-# Run this BEFORE the main installation scripts
-./relink_home.sh
-```
+## License
 
-## 📝 Script Descriptions
-
-### Core Installation Scripts
-
-#### `system_config.sh` 🏗️
-**Purpose**: Essential system-level configurations
-- **Swap Verification**: Ensures 16-17GB swap partition exists on the OS drive
-- **Network Configuration**: Sets static IP 192.168.1.69 with Cloudflare DNS
-- **Wake-on-LAN**: Configures WoL for remote wake capability
-- **SSH Server**: Enables and configures OpenSSH
-- **Display Manager**: Forces X11 over Wayland for compatibility
-- **Sudo Configuration**: Sets up passwordless sudo for the current user
-
-#### `app_install.sh` 📦
-**Purpose**: Installs development tools, applications, and services
-- **Development Tools**: VS Code, Cursor, Docker, GitHub CLI, pyenv, nvm, Rust
-- **Gaming**: Steam, ckb-next (Corsair keyboards), Piper (gaming mice)
-- **Communication**: Discord, Signal, Spotify
-- **Utilities**: 1Password, RustDesk, LocalSend, Flatseal
-- **System Monitoring**: Custom disk monitor and Discord notifications
-- **Virtualization**: QEMU/KVM with virt-manager
-
-#### `desktop_config.sh` 🎨
-**Purpose**: Configures GNOME desktop environment
-- **Theme**: Sets dark theme system-wide
-- **Dock Configuration**: Left-side dock with auto-hide
-- **Application Pinning**: Configures favorite apps in dock
-- **Terminal Setup**: Configures Kitty terminal with proper desktop integration
-
-#### `gnome_extensions.sh` 🧩
-**Purpose**: Installs and configures GNOME extensions
-- **Tiling Shell**: Advanced window management
-- **Unite**: Unified window decorations
-- **Hide Top Bar**: Auto-hiding top panel
-
-### Utility Scripts
-
-#### `relink_home.sh` 🔗
-**Purpose**: Reconnects existing home directory from separate partition
-- **Use Case**: When reinstalling Ubuntu but keeping existing /home
-- **Features**: UID matching, fstab configuration, backup creation
-- **Safety**: Extensive validation and confirmation prompts
-
-#### `install_just_perfection.sh` ⚡
-**Purpose**: Installs Just Perfection GNOME extension
-- **Alternative**: Lighter alternative to the full extension suite
-- **Configuration**: Minimal panel and dash setup
-
-#### `reset_gnome_extensions.sh` 🔄
-**Purpose**: Emergency reset for problematic extensions
-- **Use Case**: When extensions cause desktop instability
-- **Function**: Disables all extensions and resets configurations
-
-#### `autoinstall.yaml` 🤖
-**Purpose**: Unattended Ubuntu installation configuration
-- **Disk Layout**: 500MB boot, 30GB root, 16GB swap
-- **User Setup**: Creates user `jason` with hashed password
-- **Post-Install**: Downloads and runs setup scripts automatically
-
-## ⚠️ Dangerous Operations & Warnings
-
-### Critical System Changes
-1. **Network Configuration**: 
-   - Sets static IP 192.168.1.69
-   - **Risk**: May lose network connectivity if gateway isn't 192.168.1.1
-   - **Mitigation**: Verify network settings before running
-
-2. **Swap Partition Requirements**:
-   - **Risk**: Script will exit if proper swap isn't found
-   - **Requirement**: 16-17GB swap partition on same disk as root
-   - **Verification**: Check with `swapon --show` before running
-
-3. **Sudo Configuration**:
-   - Enables passwordless sudo for current user
-   - **Risk**: Reduces security if system is compromised
-   - **Mitigation**: Only use on trusted systems
-
-4. **Display Manager Changes**:
-   - Forces X11 over Wayland
-   - **Risk**: May cause display issues on some systems
-   - **Recovery**: Edit `/etc/gdm3/custom.conf` to re-enable Wayland
-
-### Data Safety
-- **Home Directory**: `relink_home.sh` moves `/home` to `/home.bak`
-- **Backups**: Always creates backups before major changes
-- **Validation**: Extensive checks before destructive operations
-
-## ✅ Safe Configuration Options
-
-### Testing Mode
-```bash
-# Dry-run to see what would be installed (apps only)
-apt list --upgradable | grep -E "package-name"
-```
-
-### Partial Installation
-Run individual components:
-```bash
-# System only (safest)
-sudo ./system_config.sh
-
-# Apps only (requires system config first)
-sudo ./app_install.sh
-
-# Desktop only
-sudo ./desktop_config.sh
-```
-
-### Rollback Options
-- **Networking**: Restore `/etc/netplan/01-netcfg.yaml.backup`
-- **fstab**: Restore from `/etc/fstab.backup.TIMESTAMP`
-- **Extensions**: Run `./reset_gnome_extensions.sh`
-
-## 🖥️ Headless Server Installation
-
-For server/SSH-only installations, use the scripts in the `headless/` directory. These provide the same functionality without GUI components.
-
-See [`headless/README.md`](headless/README.md) for specific instructions.
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-#### Network Connectivity Lost
-```bash
-# Restore original netplan
-sudo cp /etc/netplan/01-netcfg.yaml.backup /etc/netplan/01-netcfg.yaml
-sudo netplan apply
-```
-
-#### GNOME Extensions Broken Desktop
-```bash
-# Reset all extensions
-./reset_gnome_extensions.sh
-# Or manually:
-gsettings set org.gnome.shell disable-user-extensions true
-```
-
-#### Swap Not Detected
-```bash
-# Check current swap
-swapon --show
-# Check partition table
-sudo fdisk -l
-# Ensure swap is in fstab
-grep swap /etc/fstab
-```
-
-#### Permission Issues After UID Change
-```bash
-# Find and fix ownership
-sudo find /home/username -user OLD_UID -exec chown NEW_UID:NEW_GID {} \;
-```
-
-### Logs and Debugging
-- Application install logs: Check terminal output during `app_install.sh`
-- Extension logs: `~/.local/share/gnome-extensions-setup.log`
-- System logs: `journalctl -u service-name`
-
-## 🤝 Contributing
-
-This is a personal automation project, but improvements are welcome:
-1. Test on different hardware configurations
-2. Add support for other Ubuntu versions
-3. Improve error handling and recovery
-4. Add more application options
-
-## 📄 License
-
-MIT License - Feel free to adapt for your own needs.
-
----
-
-**⚠️ Final Warning**: These scripts make significant system changes. Always test on a virtual machine first and ensure you have backups of important data before running on production systems.
-
+MIT

@@ -1,53 +1,53 @@
 #!/usr/bin/env bash
-# Install the autolinux kitty config (VSCode-style per-split title bars, no GNOME titlebar).
+# Install the autolinux kitty config: VSCode-style per-split title bars, no GNOME
+# titlebar, and a gray "super + drag to move" hint drawn by window_title_bar.py.
 #
 # Standalone:  curl -fsSL https://raw.githubusercontent.com/zudsniper/autolinux/master/kitty/install.sh | bash
-# From repo:   ./kitty/install.sh        (uses the kitty.conf next to this script)
+# From repo:   ./kitty/install.sh        (uses the files next to this script)
 #
-# Backs up an existing kitty.conf to kitty.conf.bak-<timestamp> before replacing it,
+# Backs up existing files to <name>.bak-<timestamp> before replacing them,
 # then live-reloads any running kitty instances.
 set -euo pipefail
 
 REPO_RAW="${AUTOLINUX_RAW:-https://raw.githubusercontent.com/zudsniper/autolinux/master}"
 MIN_KITTY="0.46.0"   # window_title_bar* options need a recent kitty
 CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/kitty"
-DEST="$CONF_DIR/kitty.conf"
 
-say()  { printf '\033[1;34m[kitty]\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m[kitty]\033[0m %s\n' "$*" >&2; }
+if [ -t 1 ]; then C_B=$'\033[1;34m' C_Y=$'\033[1;33m' C_0=$'\033[0m'; else C_B="" C_Y="" C_0=""; fi
+say()  { printf '%s[kitty]%s %s\n' "$C_B" "$C_0" "$*"; }
+warn() { printf '%s[kitty]%s %s\n' "$C_Y" "$C_0" "$*" >&2; }
 
-# Prefer the copy beside this script (repo checkout); fall back to downloading it.
-src=""
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" 2>/dev/null && pwd || true)"
-if [ -n "$script_dir" ] && [ -f "$script_dir/kitty.conf" ]; then
-  src="$script_dir/kitty.conf"
-fi
+FILES=(kitty.conf window_title_bar.py)
 
-tmp="$(mktemp)"
-trap 'rm -f "$tmp"' EXIT
-if [ -n "$src" ]; then
-  cp "$src" "$tmp"
-else
-  say "Downloading kitty.conf from $REPO_RAW"
-  curl -fsSL "$REPO_RAW/kitty/kitty.conf" -o "$tmp"
-fi
-[ -s "$tmp" ] || { warn "Downloaded kitty.conf is empty; aborting."; exit 1; }
-
+# Prefer the copies beside this script (repo checkout) or AUTOLINUX_KITTY_SRC;
+# fall back to downloading them.
+script_dir="${AUTOLINUX_KITTY_SRC:-$(cd "$(dirname "${BASH_SOURCE[0]:-}")" 2>/dev/null && pwd || true)}"
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
 mkdir -p "$CONF_DIR"
-if [ -f "$DEST" ]; then
-  if cmp -s "$tmp" "$DEST"; then
-    say "kitty.conf already up to date ($DEST)"
+
+for f in "${FILES[@]}"; do
+  if [ -n "$script_dir" ] && [ -f "$script_dir/$f" ]; then
+    cp "$script_dir/$f" "$tmpdir/$f"
   else
-    backup="$DEST.bak-$(date +%Y%m%d-%H%M%S)"
-    cp "$DEST" "$backup"
-    say "Backed up existing config to $backup"
-    install -m 0644 "$tmp" "$DEST"
-    say "Installed $DEST"
+    say "Downloading $f from $REPO_RAW"
+    curl -fsSL "$REPO_RAW/kitty/$f" -o "$tmpdir/$f"
   fi
-else
-  install -m 0644 "$tmp" "$DEST"
-  say "Installed $DEST"
-fi
+  [ -s "$tmpdir/$f" ] || { warn "$f is empty; aborting."; exit 1; }
+
+  dest="$CONF_DIR/$f"
+  if [ -f "$dest" ] && cmp -s "$tmpdir/$f" "$dest"; then
+    say "$f already up to date"
+    continue
+  fi
+  if [ -f "$dest" ]; then
+    backup="$dest.bak-$(date +%Y%m%d-%H%M%S)"
+    cp "$dest" "$backup"
+    say "Backed up existing $f to $backup"
+  fi
+  install -m 0644 "$tmpdir/$f" "$dest"
+  say "Installed $dest"
+done
 
 # Version check + live reload
 kitty_bin="$(command -v kitty || true)"

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Kitty System Monitor
+Comment=Open kitty with btop and nvtop side by side at login
+Exec=sh -c 'sleep 5; exec @HOME@/.local/bin/kitty --session @HOME@/.config/kitty/startup-session.conf'
+Icon=kitty
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=10
+StartupNotify=false
+Categories=System;Monitor;

@@ -40,6 +40,17 @@ log_header() {
     _log_write "${_LOG_BOLD}${_LOG_BLUE}━━━ $* ━━━${_LOG_NC}"
 }
 
+# log_row <symbol> <color: green|yellow|red|blue|dim> <name> <status> [detail]
+# One aligned line of a status table (doctor / install summary).
+log_row() {
+    local c
+    case "$2" in
+        green) c="$_LOG_GREEN" ;; yellow) c="$_LOG_YELLOW" ;; red) c="$_LOG_RED" ;;
+        blue) c="$_LOG_BLUE" ;; *) c="" ;;
+    esac
+    _log_write "$(printf '  %b%s %-18s%b %-17s %s' "$c" "$1" "$3" "$_LOG_NC" "$4" "${5:-}")"
+}
+
 log_die() {
     log_error "$*"
     exit 1

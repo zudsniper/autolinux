@@ -24,6 +24,10 @@ source "$REPO_DIR/lib/safety.sh"
 source "$REPO_DIR/lib/snapshot.sh"
 # shellcheck source=lib/resume.sh
 source "$REPO_DIR/lib/resume.sh"
+# shellcheck source=lib/modules.sh
+source "$REPO_DIR/lib/modules.sh"
+# shellcheck source=lib/net.sh
+source "$REPO_DIR/lib/net.sh"
 
 # Ordered stage list. Each entry is "NN:slug"; the matching file is stages/NN-slug.sh
 # and it must define functions sNN_detect / sNN_precheck (optional) / sNN_execute /
@@ -68,6 +72,23 @@ Flags:
   --list-stages                  Print the stage list and exit
   -h, --help                     This message
 
+Module selection (stages 11-13; see ./install.sh --list-modules):
+  --profile <full|minimal>       Starting module set (default: full)
+  --modules <list>               Exactly these modules/groups instead of a profile
+  --with <list> / --without <list>
+                                 Add / remove modules or groups (comma-separated)
+  -i, --interactive              Pick modules from a checklist (default in a terminal
+                                 unless --yes or --dry-run is given)
+The selection is saved in state.json, so a resume after reboot reuses it.
+Pass any selection flag again to change it.
+
+Network (stage 10, passed to system_config.sh; nothing is changed without them):
+  --static-ip <ip[/prefix]>      Pin this IPv4 address (router DNS kept)
+  --gateway <ip>                 Gateway for --static-ip (default: current route)
+  --dns <ip[,ip...]>             DNS for --static-ip (default: what DHCP serves now)
+  --wol                          Enable Wake-on-LAN on the wired interface
+These are saved in state.json too.
+
 Stages can be referenced by number ('06') or slug ('arm-resume-and-reboot') or
 the full ID ('06-arm-resume-and-reboot').
 EOF
@@ -81,6 +102,8 @@ FORCE_REPLAY=""
 export AUTOLINUX_DRY_RUN=0
 export AUTOLINUX_YES=0
 export AUTOLINUX_ALLOW_PENDING_UPGRADES=0
+MOD_PROFILE="" MOD_ONLY="" MOD_WITH="" MOD_WITHOUT="" MOD_INTERACTIVE=""
+NET_ARGS=()
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -94,6 +117,17 @@ while [ "$#" -gt 0 ]; do
         --yes|-y)                   AUTOLINUX_YES=1; shift ;;
         --allow-pending-upgrades)   AUTOLINUX_ALLOW_PENDING_UPGRADES=1; shift ;;
         --list-stages)              ACTION=list; shift ;;
+        --profile)                  MOD_PROFILE="$2"; shift 2 ;;
+        --modules)                  MOD_ONLY="$2"; shift 2 ;;
+        --with)                     MOD_WITH="$2"; shift 2 ;;
+        --without)                  MOD_WITHOUT="$2"; shift 2 ;;
+        -i|--interactive)           MOD_INTERACTIVE=1; shift ;;
+        --static-ip|--gateway|--dns)
+            [ -n "${2:-}" ] || log_die "$1 needs a value"
+            # Validate now rather than hours later at stage 10.
+            for _v in ${2//,/ }; do net_valid_ip "${_v%/*}" || log_die "$1: '$_v' is not an IPv4 address"; done
+            NET_ARGS+=("$1" "$2"); shift 2 ;;
+        --wol)                      NET_ARGS+=(--wol); shift ;;
         -h|--help)                  usage; exit 0 ;;
         *) log_error "unknown flag: $1"; usage >&2; exit 2 ;;
     esac
@@ -238,11 +272,47 @@ _print_untested_banner() {
     log_warning "════════════════════════════════════════════════════════════════════"
 }
 
+# Resolve which modules stages 11-13 install. Reuses the saved selection on
+# resume unless new selection flags were given.
+_resolve_modules() {
+    modules_load_meta || log_die "module registry failed to load"
+    local saved
+    saved="$(state_get modules)"
+    if [ -n "$saved" ] && [ -z "$MOD_PROFILE$MOD_ONLY$MOD_WITH$MOD_WITHOUT$MOD_INTERACTIVE" ]; then
+        AUTOLINUX_MODULES="$saved"
+    else
+        local interactive="${MOD_INTERACTIVE:-0}"
+        if [ -z "$MOD_INTERACTIVE" ] && [ -t 0 ] && [ "$AUTOLINUX_YES" != "1" ] && [ "$AUTOLINUX_DRY_RUN" != "1" ]; then
+            interactive=1
+        fi
+        modules_select "${MOD_PROFILE:-full}" "$MOD_ONLY" "$MOD_WITH" "$MOD_WITHOUT" "$interactive" || exit 2
+        AUTOLINUX_MODULES="${MODULES_SELECTED[*]}"
+        state_set modules "$AUTOLINUX_MODULES"
+    fi
+    export AUTOLINUX_MODULES
+    log_info "modules: ${AUTOLINUX_MODULES:-none}"
+}
+
+# Network flags for stage 10 (system_config.sh). Saved so a resume after the
+# reboot still applies them; giving any network flag again replaces them.
+_resolve_net_args() {
+    if [ "${#NET_ARGS[@]}" -gt 0 ]; then
+        AUTOLINUX_SYSCONFIG_ARGS="${NET_ARGS[*]}"
+        state_set system_config_args "$AUTOLINUX_SYSCONFIG_ARGS"
+    else
+        AUTOLINUX_SYSCONFIG_ARGS="$(state_get system_config_args)"
+    fi
+    export AUTOLINUX_SYSCONFIG_ARGS
+    [ -z "$AUTOLINUX_SYSCONFIG_ARGS" ] || log_info "system_config.sh network flags: $AUTOLINUX_SYSCONFIG_ARGS"
+}
+
 action_run() {
     _print_untested_banner
     require_root
     state_init
     state_set status "in_progress"
+    _resolve_modules
+    _resolve_net_args
 
     # Resolve --only / --from / --force-replay against the stage list.
     local only_resolved="" from_resolved="" replay_resolved=""

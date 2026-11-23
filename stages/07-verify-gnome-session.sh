@@ -17,7 +17,7 @@ s07_execute() {
     de="$(detect_de)"
     dm="$(detect_dm)"
     log_error "Expected GNOME/GDM3, got DE='$de' DM='$dm'."
-    log_error "Try: log out and pick 'GNOME on Xorg' or 'Ubuntu' from the gear icon at GDM."
+    log_error "Try: log out and pick 'Ubuntu' (Wayland) from the gear icon at GDM."
     log_error "If GDM is not even running, check: systemctl status gdm.service"
     return 1
 }
