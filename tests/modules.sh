@@ -121,6 +121,40 @@ else
 fi
 
 echo
+echo "==> runner: doctor pass lists installed modules and skips them"
+cat > "$FAKE/modules/have.sh" <<EOF
+MOD_DESC="have"; MOD_GROUP="core"; MOD_PROFILES="full"
+mod_detect()  { return 0; }
+mod_install() { touch "$FAKE/have-installed"; }
+EOF
+doc_out="$(
+    AUTOLINUX_REPO_DIR="$FAKE" AUTOLINUX_LOG_DIR="$FAKE/log2" AUTOLINUX_DRY_RUN=0
+    MODULE_ORDER=(have); MOD_META_DESC=([have]=have)
+    MODULES_SELECTED=(have)
+    modules_run 2>&1
+)"
+if [ -e "$FAKE/have-installed" ]; then _bad "installed module is not re-installed"; else _ok "installed module is not re-installed"; fi
+case "$doc_out" in *"have"*"installed"*"1 already installed"*) _ok "doctor table reports it as already installed" ;;
+    *) _bad "doctor table reports it as already installed" "$doc_out" ;; esac
+if grep -q "SKIPPED have" "$FAKE/log2/modules-status.txt"; then _ok "status file records SKIPPED"; else _bad "status file records SKIPPED"; fi
+
+echo
+echo "==> essentials always runs first"
+(
+    MODULES_SELECTED=(gh)
+    AUTOLINUX_DRY_RUN=1 AUTOLINUX_LOG_DIR="$FAKE/log3"
+    module_detect() { return 0; }
+    modules_run >/dev/null 2>&1
+    echo "${MODULES_SELECTED[*]}"
+) > "$FAKE/order"
+_assert "essentials is prepended to the selection" "$(cat "$FAKE/order")" "essentials gh"
+
+echo
+echo "==> bashrc dotfile"
+if bash -n "$REPO_DIR/dotfiles/bashrc"; then _ok "dotfiles/bashrc parses"; else _bad "dotfiles/bashrc parses"; fi
+if grep -q "/home/[a-z]" "$REPO_DIR/dotfiles/bashrc"; then _bad "dotfiles/bashrc has no hardcoded home"; else _ok "dotfiles/bashrc has no hardcoded home"; fi
+
+echo
 echo "==> stage filters"
 AUTOLINUX_MODULES="rust ringboard desktop-settings gnome-extensions steam"
 _assert "apps filter drops desktop-settings/gnome-extensions" "$(_stage_modules apps)" "rust ringboard steam"

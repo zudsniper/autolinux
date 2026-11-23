@@ -8,10 +8,12 @@
 #   sudo ./install.sh --only ringboard,kitty  # just these (deps are added automatically)
 #   sudo ./install.sh --with portainer --without steam,obs --yes
 #   sudo ./install.sh --dry-run               # report what is missing, change nothing
+#   ./install.sh --doctor                     # what's already installed? (all modules)
 #   ./install.sh --list-modules
 #
-# Every module checks the live system first and is skipped when already set
-# up, so re-running is safe. For a fresh Xubuntu → GNOME migration use
+# Every run starts with the same check as --doctor: modules that are already
+# set up are listed as such and skipped, the rest are installed. Re-running is
+# always safe. For a fresh Xubuntu → GNOME migration use
 # bootstrap.sh, which calls the same modules from its stages.
 
 set -u
@@ -41,6 +43,9 @@ Mode:
   -y, --yes, --non-interactive
                              No checklist, no prompts
   -n, --dry-run              Only report what each module would do
+  --doctor                   Check which modules are already installed and exit
+                             (all modules unless --profile/--only/--with/--without
+                             narrow it; sudo gives the most accurate answer)
   --list-modules             Print modules, groups and profiles, then exit
   -h, --help                 This message
 
@@ -53,16 +58,16 @@ Environment overrides (put them after sudo, which drops the caller's env):
 EOF
 }
 
-PROFILE=full ONLY="" WITH="" WITHOUT="" INTERACTIVE="" ACTION=run
+PROFILE=full PROFILE_SET=0 ONLY="" WITH="" WITHOUT="" INTERACTIVE="" ACTION=run
 export AUTOLINUX_DRY_RUN="${AUTOLINUX_DRY_RUN:-0}" AUTOLINUX_YES="${AUTOLINUX_YES:-0}"
 
-need_val() { [ "$#" -ge 2 ] && [ -n "$2" ] || log_die "$1 needs a value"; }
+need_val() { if [ "$#" -lt 2 ] || [ -z "$2" ]; then log_die "$1 needs a value"; fi; }
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --profile|--only|--with|--without) need_val "$@" ;;
     esac
     case "$1" in
-        --profile)              PROFILE="$2"; shift 2 ;;
+        --profile)              PROFILE="$2"; PROFILE_SET=1; shift 2 ;;
         --only)                 ONLY="$2"; shift 2 ;;
         --with)                 WITH="$2"; shift 2 ;;
         --without)              WITHOUT="$2"; shift 2 ;;
@@ -70,6 +75,7 @@ while [ "$#" -gt 0 ]; do
         -y|--yes|--non-interactive) INTERACTIVE=0; AUTOLINUX_YES=1; shift ;;
         -n|--dry-run)           AUTOLINUX_DRY_RUN=1; shift ;;
         --list-modules)         ACTION=list; shift ;;
+        --doctor)               ACTION=doctor; shift ;;
         -h|--help)              usage; exit 0 ;;
         *) log_error "unknown flag: $1"; usage >&2; exit 2 ;;
     esac
@@ -81,6 +87,19 @@ modules_load_meta || exit 1
 
 if [ "$ACTION" = "list" ]; then
     modules_list
+    exit 0
+fi
+
+if [ "$ACTION" = "doctor" ]; then
+    # No selection flags: check every module, opt-in ones included.
+    if [ "$PROFILE_SET" = "0" ] && [ -z "$ONLY$WITH$WITHOUT" ]; then
+        ONLY="$(IFS=,; echo "${MODULE_ORDER[*]}")"
+    fi
+    modules_select "$PROFILE" "$ONLY" "$WITH" "$WITHOUT" 0 >/dev/null || exit 2
+    log_header "autolinux doctor — user: $(real_user), session: $(detect_session_type)"
+    [ "$(id -u)" = 0 ] || log_warning "not root: a few checks (e.g. ufw status) may read as missing; sudo is more accurate"
+    modules_doctor "${MODULES_SELECTED[@]}"
+    [ "${#DOCTOR_MISSING[@]}" -eq 0 ] || log_info "install the missing ones: sudo ./install.sh --only $(IFS=,; echo "${DOCTOR_MISSING[*]}")"
     exit 0
 fi
 
@@ -104,7 +123,8 @@ mkdir -p "$AUTOLINUX_LOG_DIR"
 modules_select "$PROFILE" "$ONLY" "$WITH" "$WITHOUT" "$INTERACTIVE" || exit 2
 [ "${#MODULES_SELECTED[@]}" -gt 0 ] || { log_info "nothing selected"; exit 0; }
 
-log_header "autolinux — user: $(real_user), session: $(detect_session_type), profile: $PROFILE"
+sel_desc="profile: $PROFILE"; [ -n "$ONLY" ] && sel_desc="only: $ONLY"
+log_header "autolinux — user: $(real_user), session: $(detect_session_type), $sel_desc"
 log_info "modules: ${MODULES_SELECTED[*]}"
 [ "$AUTOLINUX_DRY_RUN" = "1" ] && log_info "dry-run: nothing will be changed"
 

@@ -2,9 +2,47 @@
 
 Rebuilds my Ubuntu workstation: **Ubuntu 25.10, GNOME 49 on Wayland**, with Ringboard, Tiling Shell, kitty and the usual apps. Every piece is a small module that checks the live system first, so re-running is always safe. You can pick modules from a checklist or drive everything with flags.
 
+## Quick install (one line)
+
+> **Needs `curl`.** A fresh Ubuntu install may not have it, so run this first:
+> ```bash
+> sudo apt update && sudo apt install -y curl
+> ```
+
+Each line downloads the repo to `~/.local/share/autolinux` (no git needed) and runs [`install.sh`](#installsh) with sudo. It checks what's already installed first, lists those modules as **already installed**, and installs only the rest.
+
+**Everything** (the `full` profile):
+```bash
+curl -fsSL https://raw.githubusercontent.com/zudsniper/autolinux/master/get.sh | bash -s -- --yes
+```
+
+**Just the shell + terminal basics** (`~/.bashrc`, kitty + `kitty.conf`, `curl`, `jq`, `git`, `gh`):
+```bash
+curl -fsSL https://raw.githubusercontent.com/zudsniper/autolinux/master/get.sh | bash -s -- --only bashrc,kitty,gh --yes
+```
+
+**Everything except GNOME extensions**:
+```bash
+curl -fsSL https://raw.githubusercontent.com/zudsniper/autolinux/master/get.sh | bash -s -- --without gnome-extensions --yes
+```
+
+**What's already installed?** (`--doctor`, changes nothing):
+```bash
+curl -fsSL https://raw.githubusercontent.com/zudsniper/autolinux/master/get.sh | bash -s -- --doctor
+```
+
+Notes:
+- Drop `--yes` to get the checklist instead. The one-liner hands `install.sh` your terminal, so the checklist works.
+- Any `install.sh` flag works after `bash -s --`, for example `--dry-run` or `--with portainer`.
+- `curl`, `git` and `jq` come from the `essentials` module. It always runs first because the other modules need it.
+- The full profile leaves out the opt-in modules (`normcap`, `kitty-monitor`, `portainer`, `notify-services`). Add them with `--with`.
+- To install from a branch or tag instead of `master`, put `AUTOLINUX_REF=<ref>` in front of `bash`: `curl ... | AUTOLINUX_REF=<ref> bash -s -- ...`.
+
+From a clone instead:
+
 ```bash
 git clone https://github.com/zudsniper/autolinux && cd autolinux
-sudo ./install.sh --dry-run     # what's missing on this machine? (changes nothing)
+./install.sh --doctor           # what's already installed? (changes nothing)
 sudo ./install.sh               # checklist, full profile preselected
 ```
 
@@ -42,8 +80,25 @@ sudo ./install.sh --only ringboard,kitty       # just these (dependencies are ad
 sudo ./install.sh --with portainer --without steam,obs --yes
 sudo ./install.sh --without hardware --yes     # groups work anywhere a module name does
 sudo ./install.sh --dry-run                    # report only
+./install.sh --doctor                          # which modules are already installed?
 ./install.sh --list-modules                    # the table below, from the source
 ```
+
+Every run goes through the same steps:
+1. **Check.** It runs the `--doctor` check on the selected modules. Each one shows as `✔ installed` or `○ not installed`.
+2. **Install.** It installs only the missing modules, numbered `[1/n]`, `[2/n]`, and so on.
+3. **Summary.** Each module shows as `✔ installed now`, `• already installed` or `✘ failed`. If anything failed, the script exits with status 1, and re-running retries just those modules.
+
+```
+━━━ Checking what's already installed ━━━
+  ✔ essentials         installed
+  ✔ flatpak            installed
+  ○ normcap            not installed     NormCap OCR screen-capture (flatpak) on Ctrl+Super+Alt+O
+
+  2 already installed · 1 missing
+```
+
+`--doctor` on its own checks every module, opt-in ones included, and exits without changing anything. Combine it with `--only`, `--with`, `--without` or `--profile` to check a subset. It works without sudo, but a few checks (such as `ufw status`) are only accurate as root.
 
 Environment overrides go *after* `sudo` (it drops your environment): `sudo AUTOLINUX_UFW_ENABLE=1 RINGBOARD_VERSION=0.15.0 ./install.sh`.
 
@@ -53,7 +108,9 @@ Selection is applied in order: profile (or `--only`), then `--with`, then `--wit
 
 | Group | Module | Profiles | What it does |
 |---|---|---|---|
+| core | `essentials` | always | curl, git, jq, gnupg, ca-certificates, dconf-cli (always runs first) |
 | core | `base-packages` | minimal, full | everything in [`apt-packages.txt`](apt-packages.txt) |
+| core | `bashrc` | minimal, full | [`dotfiles/bashrc`](dotfiles/bashrc) → `~/.bashrc`. The old file is backed up to `~/.bashrc.bak-<timestamp>`. It counts as installed when the header and version line match, so lines that nvm or rustup append are left alone. |
 | core | `flatpak` | minimal, full | Flatpak, Flathub, Flatseal |
 | core | `rust` | minimal, full | rustup, **stable** toolchain (per user) |
 | desktop | `kitty` | minimal, full | Official kitty build plus the config above |

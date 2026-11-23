@@ -25,7 +25,7 @@ source "$AUTOLINUX_REPO_DIR/lib/pkg.sh"
 
 # Run order. Dependencies must come before their dependents.
 MODULE_ORDER=(
-    base-packages flatpak rust
+    essentials base-packages bashrc flatpak rust
     kitty ringboard gnome-extensions desktop-settings flameshot normcap kitty-monitor
     chrome 1password signal discord spotify localsend rustdesk steam obs kate vlc transmission claude-desktop
     vscode cursor gh docker portainer nvm pyenv uv claude-code cloudflared virtualization
@@ -174,56 +174,103 @@ _module_call() {
 
 module_detect() { _module_call "$1" mod_detect >/dev/null 2>&1; }
 
-# modules_run — install MODULES_SELECTED. Returns 1 if any module failed.
+# modules_doctor <module...> — check each module against the live system and
+# print one row per module. Read-only. Sets DOCTOR_OK and DOCTOR_MISSING.
+modules_doctor() {
+    DOCTOR_OK=(); DOCTOR_MISSING=()
+    local m
+    for m in "$@"; do
+        if module_detect "$m"; then
+            DOCTOR_OK+=("$m")
+            log_row "✔" green "$m" "installed"
+        else
+            DOCTOR_MISSING+=("$m")
+            log_row "○" yellow "$m" "not installed" "${MOD_META_DESC[$m]:-}"
+        fi
+    done
+    _log_write ""
+    _log_write "  ${#DOCTOR_OK[@]} already installed · ${#DOCTOR_MISSING[@]} missing"
+}
+
+# modules_run — check MODULES_SELECTED (doctor), install only what's missing,
+# then print a summary table. Returns 1 if any module failed.
 modules_run() {
     MODULES_FAILED=(); MODULES_DONE=(); MODULES_SKIPPED=()
-    local status_file="${AUTOLINUX_LOG_DIR:-/tmp}/modules-status.txt" m rc
+    local status_file="${AUTOLINUX_LOG_DIR:-/tmp}/modules-status.txt" m rc i=0 n
+    local dry="${AUTOLINUX_DRY_RUN:-0}"
     mkdir -p "$(dirname "$status_file")" 2>/dev/null || true
     echo "# autolinux modules — $(date -Is)" > "$status_file" 2>/dev/null || true
 
-    # Tools the modules themselves rely on (fetching keys/scripts, editing
-    # dconf lists), so any subset works on a fresh machine.
-    if [ "${AUTOLINUX_DRY_RUN:-0}" != "1" ]; then
-        rm -f "$(_apt_stamp)"
-        apt_install curl ca-certificates gnupg git jq python3 software-properties-common dconf-cli \
-            || log_warning "could not install prerequisites; some modules may fail"
+    # The other modules rely on curl/git/jq/gnupg, so essentials always goes first.
+    if module_exists essentials && [[ " ${MODULES_SELECTED[*]} " != *" essentials "* ]]; then
+        MODULES_SELECTED=(essentials "${MODULES_SELECTED[@]}")
     fi
 
-    for m in "${MODULES_SELECTED[@]}"; do
-        if module_detect "$m"; then
-            log_skip "$m: already set up"
-            MODULES_SKIPPED+=("$m"); echo "SKIPPED $m" >> "$status_file"
-            continue
-        fi
-        if [ "${AUTOLINUX_DRY_RUN:-0}" = "1" ]; then
-            log_dryrun "$m: would install — ${MOD_META_DESC[$m]}"
-            MODULES_DONE+=("$m"); echo "WOULD-INSTALL $m" >> "$status_file"
-            continue
-        fi
-        log_header "$m — ${MOD_META_DESC[$m]}"
-        rc=0
-        _module_call "$m" mod_install || rc=$?
-        if [ "$rc" -eq 0 ] && module_detect "$m"; then
-            log_success "$m installed"
-            MODULES_DONE+=("$m"); echo "DONE $m" >> "$status_file"
-        else
-            log_error "$m failed (rc=$rc)"
-            MODULES_FAILED+=("$m"); echo "FAILED $m rc=$rc" >> "$status_file"
-        fi
+    log_header "Checking what's already installed"
+    modules_doctor "${MODULES_SELECTED[@]}"
+    for m in "${DOCTOR_OK[@]}"; do
+        MODULES_SKIPPED+=("$m"); echo "SKIPPED $m" >> "$status_file"
     done
 
-    log_header "Summary"
-    if [ "${AUTOLINUX_DRY_RUN:-0}" = "1" ]; then
-        log_info "would install: ${MODULES_DONE[*]:-none}"
+    n=${#DOCTOR_MISSING[@]}
+    if [ "$n" -eq 0 ]; then
+        log_success "everything selected is already installed; nothing to do"
+    elif [ "$dry" = "1" ]; then
+        for m in "${DOCTOR_MISSING[@]}"; do
+            MODULES_DONE+=("$m"); echo "WOULD-INSTALL $m" >> "$status_file"
+        done
     else
-        log_info "installed: ${MODULES_DONE[*]:-none}"
+        rm -f "$(_apt_stamp)"
+        for m in "${DOCTOR_MISSING[@]}"; do
+            i=$((i+1))
+            log_header "[$i/$n] $m — ${MOD_META_DESC[$m]:-}"
+            rc=0
+            _module_call "$m" mod_install || rc=$?
+            if [ "$rc" -eq 0 ] && module_detect "$m"; then
+                log_success "$m installed"
+                MODULES_DONE+=("$m"); echo "DONE $m" >> "$status_file"
+            else
+                log_error "$m failed (rc=$rc)"
+                MODULES_FAILED+=("$m"); echo "FAILED $m rc=$rc" >> "$status_file"
+            fi
+        done
     fi
-    log_info "already set up: ${MODULES_SKIPPED[*]:-none}"
+
+    _modules_summary
     if [ "${#MODULES_FAILED[@]}" -gt 0 ]; then
-        log_error "failed: ${MODULES_FAILED[*]} (re-run to retry; status in $status_file)"
+        log_error "re-run to retry the failed modules (status: $status_file)"
         return 1
     fi
     return 0
+}
+
+_modules_summary() {
+    local m r
+    declare -A res=()
+    for m in "${MODULES_SKIPPED[@]}"; do res[$m]=skipped; done
+    for m in "${MODULES_DONE[@]}";    do res[$m]=installed; done
+    for m in "${MODULES_FAILED[@]}";  do res[$m]=failed; done
+
+    log_header "Summary"
+    for m in "${MODULES_SELECTED[@]}"; do
+        r="${res[$m]:-}"
+        case "$r" in
+            skipped) log_row "•" dim "$m" "already installed" ;;
+            failed) log_row "✘" red "$m" "failed" ;;
+            installed)
+                if [ "${AUTOLINUX_DRY_RUN:-0}" = "1" ]; then
+                    log_row "○" yellow "$m" "would install" "${MOD_META_DESC[$m]:-}"
+                else
+                    log_row "✔" green "$m" "installed now"
+                fi ;;
+        esac
+    done
+    _log_write ""
+    if [ "${AUTOLINUX_DRY_RUN:-0}" = "1" ]; then
+        _log_write "  ${#MODULES_DONE[@]} would install · ${#MODULES_SKIPPED[@]} already installed (dry run: nothing changed)"
+    else
+        _log_write "  ${#MODULES_DONE[@]} installed · ${#MODULES_SKIPPED[@]} already installed · ${#MODULES_FAILED[@]} failed"
+    fi
 }
 
 # ---------- bootstrap.sh integration ----------
