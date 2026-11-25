@@ -51,6 +51,7 @@ user_dconf_load() {
         return 0
     fi
     user_bus_available || { log_warning "no session bus for $(real_user); skipping dconf load of $f"; return 1; }
+    apt_install_lean dconf-cli || return 1
     as_user dconf load / < "$f"
 }
 
@@ -58,6 +59,7 @@ user_dconf_load() {
 # Idempotent: updates an existing custom keybinding with the same name or
 # command, otherwise allocates the next free customN slot.
 gnome_add_keybinding() {
+    apt_install_lean dconf-cli python3 || return 1
     local name="$1" cmd="$2" binding="$3"
     local base=/org/gnome/settings-daemon/plugins/media-keys
     if [ "${AUTOLINUX_DRY_RUN:-0}" = "1" ]; then
