@@ -8,7 +8,10 @@ MOD_DESC="Essentials: curl, git, jq, gnupg (used by the other modules)"
 MOD_GROUP="core"
 MOD_PROFILES="minimal full"
 
-ESSENTIALS=(curl ca-certificates gnupg git jq python3 software-properties-common dconf-cli)
+# Keep this to packages that exist on Ubuntu and Debian. software-properties-common
+# (add-apt-repository) is gone in Debian 13; modules that need a PPA install it
+# themselves.
+ESSENTIALS=(curl ca-certificates gnupg git jq python3 dconf-cli)
 
 mod_detect()  { all_packages_installed "${ESSENTIALS[@]}"; }
 mod_install() { apt_install "${ESSENTIALS[@]}"; }

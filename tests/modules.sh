@@ -163,6 +163,15 @@ AUTOLINUX_MODULES="rust"
 _assert "unselected single module is empty" "$(_stage_modules gnome-extensions)" ""
 
 echo
+echo "==> no Ubuntu-only packages in shared lists (Debian 13 lacks them)"
+if grep -qs '^ESSENTIALS=.*software-properties-common' "$REPO_DIR/modules/essentials.sh" \
+    || read_package_list "$REPO_DIR/apt-packages.txt" | grep -qx software-properties-common; then
+    _bad "essentials/apt-packages.txt must not require software-properties-common"
+else
+    _ok "essentials/apt-packages.txt don't require software-properties-common"
+fi
+
+echo
 echo "==> apt-packages.txt"
 TMPL="$(mktemp)"
 printf '  curl  \n\n# comment\ngit # trailing\n\tjq\n' > "$TMPL"

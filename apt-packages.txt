@@ -15,7 +15,6 @@ openssh-server
 ca-certificates
 gnupg
 lsb-release
-software-properties-common
 apt-transport-https
 net-tools
 ethtool
